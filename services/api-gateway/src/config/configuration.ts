@@ -5,6 +5,7 @@ export interface AppConfig {
   mongoUri: string;
   redisUrl: string;
   mt5ConnectorUrl: string;
+  backtestEngineUrl: string;
   jwt: {
     accessSecret: string;
     refreshSecret: string;
@@ -36,6 +37,7 @@ export default (): AppConfig => ({
   mongoUri: process.env.MONGO_URI ?? 'mongodb://localhost:27017/totaltrading',
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
   mt5ConnectorUrl: process.env.MT5_CONNECTOR_URL ?? 'http://localhost:8001',
+  backtestEngineUrl: process.env.BACKTEST_ENGINE_URL ?? 'http://localhost:8004',
   jwt: {
     accessSecret: required('JWT_ACCESS_SECRET'),
     refreshSecret: required('JWT_REFRESH_SECRET'),

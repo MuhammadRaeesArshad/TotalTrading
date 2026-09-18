@@ -16,6 +16,9 @@ The UI is called **Meridian**.
   backtests, trades, AI reports, system logs.
 - **The backtest engine** — Rust, measured at ~29M bars/sec on one core. Built
   and tested; it has no rules to run yet (see below).
+- **History import** — pulls years of candles out of MetaTrader in overlapping
+  chunks and writes them to a memory-mappable bar cache, and tells you how far
+  back the terminal actually reaches.
 - **Infra** — Docker Compose and Kubernetes manifests for the whole stack.
 
 Every other page in the UI says what will land there and what it is waiting on.
@@ -133,7 +136,8 @@ Each phase should run before the next starts.
 3. `strategy-engine` — detection as pure, unit-tested functions **← blocked on the rules**
 4. Scale to all pairs and timeframes; recompute D1/H4 on bar close only
 5. ~~Gateway and dashboard skeleton~~ *(WebSocket relay pending)*
-6. ~~`backtest-engine`~~ — engine done; needs the rules and Mongo persistence
+6. ~~`backtest-engine`~~ — engine and history import done; needs the rules and
+   Mongo persistence
 7. Backtest UI — equity curve, trade list, filters
 8. `ai-analysis` — Ollama reading from Mongo
 9. News ingestion, then confirm-before-send execution once parity is proven

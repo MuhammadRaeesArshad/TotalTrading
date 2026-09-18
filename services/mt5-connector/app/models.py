@@ -26,10 +26,38 @@ class SymbolsRequest(Credentials):
     )
 
 
+Tf = Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
+
+
 class CandlesRequest(Credentials):
     symbol: str
-    timeframe: Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
+    timeframe: Tf
     count: int = Field(500, ge=1, le=5000)
+
+
+class CandlesRangeRequest(Credentials):
+    """Candles between two instants, for backfilling the bar cache.
+
+    `/candles` reads backwards from the present, which is right for a live
+    scanner and useless for an import: there is no way to ask it for 2019. This
+    maps onto MT5's `copy_rates_range`, so the importer can page through years
+    by walking the window forward.
+    """
+
+    symbol: str
+    timeframe: Tf
+    from_ts: int = Field(..., description="Unix seconds, inclusive")
+    to_ts: int = Field(..., description="Unix seconds, inclusive")
+    limit: int = Field(
+        200_000,
+        ge=1,
+        le=500_000,
+        description=(
+            "Safety cap on one response. MT5 itself caps history by the "
+            "terminal's Max bars in chart setting, which is usually the "
+            "binding limit long before this is."
+        ),
+    )
 
 
 class AccountInfo(BaseModel):

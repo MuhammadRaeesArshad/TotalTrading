@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { Mt5Module } from './mt5/mt5.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { HealthModule } from './health/health.module';
+import { BacktestModule } from './backtest/backtest.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { HealthModule } from './health/health.module';
     AuthModule,
     Mt5Module,
     AccountsModule,
+    BacktestModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

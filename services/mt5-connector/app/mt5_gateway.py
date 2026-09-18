@@ -54,6 +54,12 @@ class BaseGateway:
     ) -> list[Candle]:
         raise NotImplementedError
 
+    def candles_range(
+        self, creds: Credentials, symbol: str, timeframe: str,
+        from_ts: int, to_ts: int, limit: int,
+    ) -> list[Candle]:
+        raise NotImplementedError
+
 
 class LiveGateway(BaseGateway):
     mode = "live"
@@ -196,6 +202,56 @@ class LiveGateway(BaseGateway):
             ]
 
 
+    def candles_range(
+        self,
+        creds: Credentials,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+        limit: int,
+    ) -> list[Candle]:
+        with self._lock:
+            self._ensure_login(creds)
+
+            if not self._mt5.symbol_select(symbol, True):
+                raise Mt5Error(f"{symbol} could not be added to Market Watch.")
+
+            # MT5 wants naive datetimes it interprets as the terminal's own
+            # timezone, which is usually broker time rather than UTC. Passing
+            # tz-aware values silently shifts every bar, so the offset is
+            # handled here once rather than guessed at every call site.
+            start = datetime.fromtimestamp(from_ts, tz=timezone.utc).replace(tzinfo=None)
+            end = datetime.fromtimestamp(to_ts, tz=timezone.utc).replace(tzinfo=None)
+
+            rates = self._mt5.copy_rates_range(
+                symbol, self._timeframes[timeframe], start, end
+            )
+
+            if rates is None:
+                code, msg = self._mt5.last_error()
+                raise Mt5Error(
+                    f"No {timeframe} history for {symbol} between {start} and {end} "
+                    f"({code}: {msg}). The terminal only keeps as much history as "
+                    "'Max bars in chart' allows — raise it in Tools > Options > Charts."
+                )
+
+            # An empty window is not an error: weekends and holidays have no
+            # bars, and the importer walks straight past them.
+            return [
+                Candle(
+                    time=datetime.fromtimestamp(int(r["time"]), tz=timezone.utc),
+                    open=float(r["open"]),
+                    high=float(r["high"]),
+                    low=float(r["low"]),
+                    close=float(r["close"]),
+                    tick_volume=int(r["tick_volume"]),
+                    spread=int(r["spread"]),
+                )
+                for r in rates[:limit]
+            ]
+
+
 MOCK_PAIRS = [
     "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
     "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
@@ -204,6 +260,10 @@ MOCK_PAIRS = [
     "NZDJPY", "NZDCHF", "NZDCAD",
     "CADJPY", "CADCHF", "CHFJPY",
 ]
+
+# Fixed origin for the mock's bar grid. Generated bars are a function of their
+# index from here, so any window is reproducible without replaying history.
+MOCK_EPOCH = 1_262_304_000  # 2010-01-01T00:00:00Z
 
 MOCK_BASE_PRICE = {
     "EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 149.50, "USDCHF": 0.8800,
@@ -220,6 +280,29 @@ class MockGateway(BaseGateway):
 
     def terminal_available(self) -> bool:
         return False
+
+    @staticmethod
+    def _mock_base_price(symbol: str) -> float:
+        """Starting price for a symbol the mock broker offers.
+
+        Unknown symbols raise, exactly as a real broker would. Fabricating a
+        plausible series for whatever string arrives is worse than useless: a
+        typo in a pair list would import years of invented history and nothing
+        downstream would ever notice.
+        """
+        if symbol not in MOCK_PAIRS:
+            raise Mt5Error(
+                f"{symbol} is not offered on this account. "
+                f"This mock broker lists {len(MOCK_PAIRS)} pairs; "
+                "check the symbol against /symbols."
+            )
+
+        if symbol in MOCK_BASE_PRICE:
+            return MOCK_BASE_PRICE[symbol]
+
+        # A listed pair with no hand-set price still needs a stable one.
+        digest = int(hashlib.sha256(symbol.encode()).hexdigest()[:6], 16)
+        return 0.6 + (digest % 1000) / 1000.0
 
     def account_info(self, creds: Credentials) -> AccountInfo:
         if not creds.password:
@@ -271,11 +354,7 @@ class MockGateway(BaseGateway):
         if timeframe not in TIMEFRAME_MINUTES:
             raise Mt5Error(f"{timeframe} is not a timeframe this connector knows.")
 
-        base = MOCK_BASE_PRICE.get(symbol)
-        if base is None:
-            # Unknown-but-plausible pair: derive a stable price from the name.
-            digest = int(hashlib.sha256(symbol.encode()).hexdigest()[:6], 16)
-            base = 0.6 + (digest % 1000) / 1000.0
+        base = self._mock_base_price(symbol)
 
         jpy = symbol.endswith("JPY")
         vol = base * (0.0006 if not jpy else 0.0009)
@@ -310,6 +389,82 @@ class MockGateway(BaseGateway):
             price = c
 
         return out
+
+
+    def candles_range(
+        self,
+        creds: Credentials,
+        symbol: str,
+        timeframe: str,
+        from_ts: int,
+        to_ts: int,
+        limit: int,
+    ) -> list[Candle]:
+        if timeframe not in TIMEFRAME_MINUTES:
+            raise Mt5Error(f"{timeframe} is not a timeframe this connector knows.")
+
+        step = TIMEFRAME_MINUTES[timeframe] * 60
+        # Snap to the timeframe grid so repeated calls over overlapping windows
+        # return the *same* bars rather than a shifted set. The importer relies
+        # on that to stitch pages together.
+        start = (max(from_ts, MOCK_EPOCH) // step) * step
+        end = (to_ts // step) * step
+
+        out: list[Candle] = []
+        ts = start
+        while ts <= end and len(out) < limit:
+            candle = self._synthetic_bar(symbol, timeframe, ts, step)
+            if candle is not None:
+                out.append(candle)
+            ts += step
+
+        return out
+
+    def _synthetic_bar(
+        self, symbol: str, timeframe: str, ts: int, step: int
+    ) -> Candle | None:
+        """One bar, derived purely from its timestamp.
+
+        A function of the index rather than a walk, so any window can be
+        generated without replaying everything before it — which is what lets
+        the importer request 2019 without the mock having to simulate 2018.
+        """
+        # The FX market is shut at weekends. Returning nothing here exercises
+        # the same empty-window path a real broker produces over a holiday.
+        moment = datetime.fromtimestamp(ts, tz=timezone.utc)
+        if moment.weekday() >= 5:
+            return None
+
+        base = self._mock_base_price(symbol)
+
+        jpy = symbol.endswith("JPY")
+        digits = 3 if jpy else 5
+        vol = base * (0.0009 if jpy else 0.0006)
+
+        index = (ts - MOCK_EPOCH) // step
+        seed = int(
+            hashlib.blake2b(
+                f"{symbol}:{timeframe}:{index}".encode(), digest_size=8
+            ).hexdigest(),
+            16,
+        )
+        rng = random.Random(seed)
+
+        drift = math.sin(index / 42.0) * vol * 1.6 + math.sin(index / 613.0) * vol * 4.0
+        o = base + drift + rng.gauss(0, vol)
+        c = o + rng.gauss(0, vol)
+        h = max(o, c) + abs(rng.gauss(0, vol * 0.6))
+        l = min(o, c) - abs(rng.gauss(0, vol * 0.6))
+
+        return Candle(
+            time=moment,
+            open=round(o, digits),
+            high=round(h, digits),
+            low=round(l, digits),
+            close=round(c, digits),
+            tick_volume=rng.randint(180, 2400),
+            spread=rng.randint(1, 14),
+        )
 
 
 def build_gateway() -> BaseGateway:

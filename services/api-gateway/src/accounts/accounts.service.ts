@@ -197,6 +197,18 @@ export class AccountsService {
     return this.mt5.candles(creds, query.symbol, query.timeframe, query.count ?? 500);
   }
 
+  /**
+   * Credentials for an import run, decrypted.
+   *
+   * Public because the backtest engine has to log into MT5 itself to read
+   * history — it cannot borrow the gateway's session. This is the only way out
+   * of this service for a plaintext password, which is why it is one named
+   * method rather than a general accessor.
+   */
+  credentialsForImport(userId: string, id: string): Promise<Mt5Credentials> {
+    return this.credentialsFor(id, userId);
+  }
+
   /** Decrypts on the way out. Nothing above this layer sees the plaintext password. */
   private async credentialsFor(id: string, userId: string): Promise<Mt5Credentials> {
     const withSecret = await this.accounts

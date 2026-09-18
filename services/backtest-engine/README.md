@@ -88,10 +88,9 @@ is already fixed by `api-gateway/src/schemas/backtest.schema.ts`, and
 `engineVersion` on that document records which implementation produced a run
 so Python and Rust results stay distinguishable.
 
-**The bar importer.** `write_bars` is the API; the job that pulls history out
-of `mt5-connector` and fills the cache is not written yet. Check how far back
-the broker's M5 and M15 actually go before assuming a date range (spec §6.7) —
-lower timeframes are usually capped well short of what you would want.
+**Mongo persistence** (see above) and **live/backtest parity fixtures** — once
+detection exists in both Python and Rust, the same candle files need to run
+through both and assert identical signals, or the two drift apart silently.
 
 ## Layout
 
@@ -115,6 +114,8 @@ crates/backtest-service/   axum HTTP, job queue, progress
 | Method | Path                 | Does                                        |
 |--------|----------------------|---------------------------------------------|
 | GET    | `/health`            | Status, cores, cache path, registered rules |
+| POST   | `/import`            | Backfill the bar cache from mt5-connector   |
+| GET    | `/cache`             | What history is on disk, per symbol         |
 | GET    | `/detectors`         | What can be run                             |
 | POST   | `/runs`              | Queue a run; returns `202` and an id        |
 | GET    | `/runs`              | All runs, newest first, without trade logs  |
@@ -136,6 +137,51 @@ curl -X POST localhost:8004/runs -H 'Content-Type: application/json' -d '{
 
 Runs execute on `spawn_blocking` — the engine is CPU-bound and would otherwise
 stall every other request for the length of a scan.
+
+## Filling the bar cache
+
+Nothing is backtestable until history is on disk. The importer pulls it from
+`mt5-connector` and writes `.ttb` files:
+
+```bash
+curl -X POST localhost:8004/import -H 'Content-Type: application/json' -d '{
+  "credentials": {"login": "51234567", "password": "...", "server": "ICMarketsSC-Demo"},
+  "symbols": ["EURUSD", "GBPUSD"],
+  "timeframes": ["M5", "H4", "D1"],
+  "from_ts": 1609459200,
+  "to_ts": 1704067200
+}'
+```
+
+In practice you call it through the gateway — `POST /api/backtest/accounts/:id/import`
+— which decrypts the stored credentials for you and checks the symbols against
+what the broker actually offers first.
+
+### Why the import is not one request to MT5
+
+The terminal will not hand over years of M5 in one call: it keeps only as much
+history as *Max bars in chart* allows, and a single wide `copy_rates_range`
+either truncates or returns nothing. So the import walks the window forward in
+overlapping chunks and stitches them by timestamp in a `BTreeMap` — a bar seen
+twice is stored once, and the result is sorted by construction. `write_bars`
+rejects anything out of order, so a stitching bug fails loudly rather than
+corrupting the cache.
+
+Measured against the mock connector: 225k M5 bars (3 years, one pair) in 4.5s
+across 12 chunks, 38 duplicate bars dropped at the seams. A real terminal is
+slower — it is doing actual I/O — but the shape is the same.
+
+Two things in the response are worth reading:
+
+- **`short_of_request`** — set when the terminal had less history than you
+  asked for. Not an error; brokers cap lower timeframes hard. It decides what
+  date range is honest to backtest over (spec §6.7).
+- **`failed`** — one bad symbol does not abandon the rest. A broker that does
+  not offer NZDCHF is no reason to skip the other twenty-seven pairs.
+
+Credentials travel with the request because the engine logs into MT5 itself;
+they are held for the length of the call, never written, and `Credentials`
+has a redacting `Debug` impl so a stray log line cannot leak a password.
 
 ## Running it
 

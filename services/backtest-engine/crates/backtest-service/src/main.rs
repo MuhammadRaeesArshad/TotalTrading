@@ -12,6 +12,7 @@
 //! live scanner. Register a `DetectorFactory` in [`build_registry`] when they
 //! land — nothing else changes.
 
+mod importer;
 mod instruments;
 mod jobs;
 
@@ -23,7 +24,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use backtest_core::engine::detector::DetectorRegistry;
 use backtest_core::engine::runner::{run, RunRequest, ScanTask};
@@ -35,6 +36,7 @@ use serde_json::json;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
+use crate::importer::{ImportReport, ImportSpec};
 use crate::jobs::{JobRegistry, RunSpec};
 
 #[derive(Clone)]
@@ -42,6 +44,7 @@ struct AppState {
     jobs: JobRegistry,
     registry: Arc<DetectorRegistry>,
     bar_cache: PathBuf,
+    connector_url: String,
 }
 
 /// Where implementations of the strategy get registered.
@@ -75,10 +78,14 @@ async fn main() {
         );
     }
 
+    let connector_url = std::env::var("MT5_CONNECTOR_URL")
+        .unwrap_or_else(|_| "http://localhost:8001".into());
+
     let state = AppState {
         jobs: JobRegistry::new(),
         registry: Arc::new(registry),
         bar_cache: bar_cache.clone(),
+        connector_url,
     };
 
     let app = Router::new()
@@ -88,6 +95,8 @@ async fn main() {
         .route("/runs", get(list_runs).post(start_run))
         .route("/runs/:id", get(get_run).delete(cancel_run))
         .route("/runs/:id/progress", get(run_progress))
+        .route("/import", post(start_import))
+        .route("/cache", get(list_cache))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -118,6 +127,7 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
         "bar_cache_present": state.bar_cache.is_dir(),
         "detectors": state.registry.names(),
         "detection_implemented": !state.registry.is_empty(),
+        "connector_url": state.connector_url,
     }))
 }
 
@@ -258,6 +268,82 @@ async fn start_run(
         Json(json!({ "id": id, "status": "queued" })),
     )
         .into_response())
+}
+
+/// Pulls history out of mt5-connector and writes it into the bar cache.
+///
+/// Synchronous by design: an import is a one-off setup step whose whole point
+/// is knowing whether it worked and how far back the data actually goes. A
+/// 202-and-poll would hide exactly the answer the caller is asking for.
+/// It still runs on `spawn_blocking`, so a slow terminal cannot stall the
+/// runtime while a scan is in flight.
+async fn start_import(
+    State(state): State<AppState>,
+    Json(spec): Json<ImportSpec>,
+) -> Result<Response, ApiError> {
+    if spec.symbols.is_empty() {
+        return Err(ApiError::bad_request("Give at least one symbol to import."));
+    }
+    if spec.timeframes.is_empty() {
+        return Err(ApiError::bad_request("Give at least one timeframe to import."));
+    }
+    if spec.from_ts >= spec.to_ts {
+        return Err(ApiError::bad_request("`from_ts` must come before `to_ts`."));
+    }
+
+    let cache = state.bar_cache.clone();
+    let url = state.connector_url.clone();
+
+    let report: ImportReport = tokio::task::spawn_blocking(move || {
+        importer::import(&url, &cache, &spec)
+    })
+    .await
+    .map_err(|e| ApiError::unprocessable(format!("the import task panicked: {e}")))?;
+
+    tracing::info!(
+        imported = report.imported.len(),
+        failed = report.failed.len(),
+        bars = report.total_bars,
+        ms = report.elapsed_ms,
+        "import finished"
+    );
+
+    // Partial success is the common case — brokers do not offer every symbol.
+    // 200 with both lists beats an error that discards what did work.
+    Ok(Json(report).into_response())
+}
+
+/// What is already in the cache, so a caller can tell what is backtestable
+/// without opening every file itself.
+async fn list_cache(State(state): State<AppState>) -> impl IntoResponse {
+    let mut series = Vec::new();
+
+    if let Ok(symbols) = std::fs::read_dir(&state.bar_cache) {
+        for symbol_dir in symbols.flatten() {
+            let Ok(files) = std::fs::read_dir(symbol_dir.path()) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("ttb") {
+                    continue;
+                }
+                // Mapping is cheap and validates the header, so a corrupt file
+                // shows up here rather than at the start of a long scan.
+                if let Ok(bars) = Bars::open(&path) {
+                    series.push(json!({
+                        "symbol": bars.symbol(),
+                        "timeframe": bars.timeframe().as_str(),
+                        "bars": bars.len(),
+                        "first_ts": bars.time().first().copied(),
+                        "last_ts": bars.time().last().copied(),
+                    }));
+                }
+            }
+        }
+    }
+
+    Json(json!({ "series": series }))
 }
 
 // ------------------------------------------------------------------- helpers

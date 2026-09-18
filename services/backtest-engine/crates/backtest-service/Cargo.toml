@@ -21,3 +21,12 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+# Blocking HTTP, for pulling history out of mt5-connector. The importer runs on
+# spawn_blocking anyway, so an async client would buy nothing and cost a lot of
+# dependency surface.
+#
+# TLS is deliberately off. mt5-connector is reached over plain HTTP on the
+# local machine or LAN, and the rustls stack pulls in a large dependency tree
+# that also raises the MSRV past 1.75. If you ever put the connector behind
+# https, add "tls" back to the feature list.
+ureq = { version = "2.10", default-features = false, features = ["json"] }

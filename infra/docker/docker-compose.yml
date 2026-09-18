@@ -51,6 +51,7 @@ services:
       REDIS_URL: redis://redis:6379
       # host.docker.internal reaches the connector running natively on Windows.
       MT5_CONNECTOR_URL: ${MT5_CONNECTOR_URL:-http://host.docker.internal:8001}
+      BACKTEST_ENGINE_URL: http://backtest-engine:8004
       CORS_ORIGINS: http://localhost:5173,http://localhost:8080
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set it in infra/docker/.env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set it in infra/docker/.env}
@@ -115,6 +116,11 @@ services:
       BAR_CACHE_DIR: /var/lib/totaltrading/bars
       PORT: '8004'
       RUST_LOG: backtest_service=info
+      # The engine logs into MT5 itself during an import, so it needs the
+      # connector directly rather than going back through the gateway.
+      MT5_CONNECTOR_URL: ${MT5_CONNECTOR_URL:-http://host.docker.internal:8001}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     volumes:
       # Bars are memory-mapped, so they need a real volume. An overlay
       # filesystem would neither persist nor page well.

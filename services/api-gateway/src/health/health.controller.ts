@@ -2,12 +2,14 @@ import { Controller, Get } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { Mt5Client } from '../mt5/mt5.client';
+import { BacktestClient } from '../backtest/backtest.client';
 
 @Controller()
 export class HealthController {
   constructor(
     @InjectConnection() private readonly mongo: Connection,
     private readonly mt5: Mt5Client,
+    private readonly backtest: BacktestClient,
   ) {}
 
   /** Liveness: is the process up? Kept dependency-free so k8s won't restart
@@ -30,10 +32,18 @@ export class HealthController {
   /** Surfaced on the Settings page so the user can see which services are alive. */
   @Get('status/services')
   async services() {
-    const mt5 = await this.mt5
-      .health()
-      .then((h) => ({ reachable: true, ...h }))
-      .catch((e: Error) => ({ reachable: false, detail: e.message }));
+    // Probed in parallel — a slow or dead service should not add its timeout
+    // to every other one on the page.
+    const [mt5, backtest] = await Promise.all([
+      this.mt5
+        .health()
+        .then((h) => ({ reachable: true, ...h }))
+        .catch((e: Error) => ({ reachable: false, detail: e.message })),
+      this.backtest
+        .health()
+        .then((h) => ({ reachable: true, ...h }))
+        .catch((e: Error) => ({ reachable: false, detail: e.message })),
+    ]);
 
     return {
       'api-gateway': { reachable: true, status: 'ok' },
@@ -43,8 +53,7 @@ export class HealthController {
       },
       'mt5-connector': mt5,
       'strategy-engine': { reachable: false, status: 'not_implemented' },
-      // The engine is built and running; it has no rules to execute yet.
-      'backtest-engine': { reachable: false, status: 'awaiting_strategy' },
+      'backtest-engine': backtest,
       'ai-analysis': { reachable: false, status: 'not_implemented' },
     };
   }

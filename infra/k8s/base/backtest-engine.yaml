@@ -44,6 +44,9 @@ spec:
               value: /var/lib/totaltrading/bars
             - name: RUST_LOG
               value: backtest_service=info
+            # Imports log into MT5 directly rather than via the gateway.
+            - name: MT5_CONNECTOR_URL
+              value: http://mt5-connector:8001
           volumeMounts:
             - name: bars
               mountPath: /var/lib/totaltrading/bars

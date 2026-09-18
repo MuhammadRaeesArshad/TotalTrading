@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
-    AccountInfo, Candle, CandlesRequest, Credentials,
+    AccountInfo, Candle, CandlesRangeRequest, CandlesRequest, Credentials,
     Health, SymbolInfo, SymbolsRequest,
 )
 from .mt5_gateway import Mt5Error, build_gateway
@@ -84,6 +84,25 @@ def symbols(req: SymbolsRequest) -> list[SymbolInfo]:
 def candles(req: CandlesRequest) -> list[Candle]:
     try:
         return gateway.candles(req, req.symbol, req.timeframe, req.count)
+    except Mt5Error as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/candles/range", response_model=list[Candle])
+def candles_range(req: CandlesRangeRequest) -> list[Candle]:
+    """Candles between two instants, for backfilling the bar cache.
+
+    An empty list is a valid answer — weekends and holidays have no bars — so
+    the importer treats it as "nothing here, move on" rather than a failure.
+    """
+    if req.from_ts >= req.to_ts:
+        raise HTTPException(
+            status_code=400, detail="`from_ts` must come before `to_ts`."
+        )
+    try:
+        return gateway.candles_range(
+            req, req.symbol, req.timeframe, req.from_ts, req.to_ts, req.limit
+        )
     except Mt5Error as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

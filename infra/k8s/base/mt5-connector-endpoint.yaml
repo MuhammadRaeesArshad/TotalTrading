@@ -1,0 +1,35 @@
+# mt5-connector does not run in the cluster.
+#
+# The MetaTrader5 package drives a Windows terminal over IPC on the same
+# machine. There is no container that can do that, so the connector runs
+# natively on the Windows box and the cluster reaches out to it.
+#
+# This Service has no selector: the EndpointSlice below points at a fixed IP,
+# so `http://mt5-connector:8001` resolves inside the cluster just like any
+# other service. Set the IP in each overlay.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mt5-connector
+spec:
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: mt5-connector-static
+  labels:
+    kubernetes.io/service-name: mt5-connector
+addressType: IPv4
+ports:
+  - name: http
+    port: 8001
+    protocol: TCP
+endpoints:
+  # Patched per overlay. On Docker Desktop this is the host; on a LAN cluster
+  # it is the Windows machine's address.
+  - addresses: ['127.0.0.1']

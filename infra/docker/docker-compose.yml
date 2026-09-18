@@ -1,0 +1,143 @@
+# Local development stack.
+#
+# mt5-connector is NOT in here by default — the MetaTrader5 package needs a
+# running terminal on the same Windows machine, so it runs natively. Start it
+# with `make connector` and the gateway will find it on host port 8001.
+#
+# The `mock` profile adds a Linux build of the connector that serves synthetic
+# candles, for working on the UI away from the Windows box:
+#   docker compose --profile mock up
+
+name: totaltrading
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand("ping")']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis/redis-stack-server:latest
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ../../services/api-gateway
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      NODE_ENV: development
+      PORT: '4000'
+      MONGO_URI: mongodb://mongo:27017/totaltrading
+      REDIS_URL: redis://redis:6379
+      # host.docker.internal reaches the connector running natively on Windows.
+      MT5_CONNECTOR_URL: ${MT5_CONNECTOR_URL:-http://host.docker.internal:8001}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set it in infra/docker/.env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set it in infra/docker/.env}
+      MT5_CRED_KEY: ${MT5_CRED_KEY:?generate with openssl rand -hex 32}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../../apps/web
+      args:
+        VITE_API_URL: http://localhost:4000/api
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    depends_on:
+      - api-gateway
+
+  # Health endpoints only. Both are placeholders until their build-order step.
+  strategy-engine:
+    build:
+      context: ../../services/strategy-engine
+    restart: unless-stopped
+    ports:
+      - '8002:8000'
+    environment:
+      MONGO_URI: mongodb://mongo:27017/totaltrading
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  ai-analysis:
+    build:
+      context: ../../services/ai-analysis
+    restart: unless-stopped
+    ports:
+      - '8003:8000'
+    environment:
+      MONGO_URI: mongodb://mongo:27017/totaltrading
+      # Reaches an Ollama running on the host, where the GPU is.
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b-instruct}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  backtest-engine:
+    build:
+      context: ../../services/backtest-engine
+    restart: unless-stopped
+    ports:
+      - '8004:8004'
+    environment:
+      BAR_CACHE_DIR: /var/lib/totaltrading/bars
+      PORT: '8004'
+      RUST_LOG: backtest_service=info
+    volumes:
+      # Bars are memory-mapped, so they need a real volume. An overlay
+      # filesystem would neither persist nor page well.
+      - bar-cache:/var/lib/totaltrading/bars
+    # A scan will use every core it is given. Cap it so a long backtest does
+    # not starve the terminal and the gateway on the same machine.
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+
+  # Linux connector that serves synthetic candles. Never reaches a real terminal.
+  mt5-connector-mock:
+    profiles: ['mock']
+    build:
+      context: ../../services/mt5-connector
+    restart: unless-stopped
+    ports:
+      - '8001:8001'
+    environment:
+      MT5_FORCE_MOCK: 'true'
+
+volumes:
+  mongo-data:
+  redis-data:
+  bar-cache:

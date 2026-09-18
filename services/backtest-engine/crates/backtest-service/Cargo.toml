@@ -1,0 +1,23 @@
+[package]
+name = "backtest-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "HTTP wrapper around backtest-core: job queue, progress, result persistence."
+
+[[bin]]
+name = "backtest-service"
+path = "src/main.rs"
+
+[dependencies]
+backtest-core = { path = "../backtest-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }

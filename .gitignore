@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Rust build output — the workspace target dir is gigabytes.
+target/
+**/target/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets. Nothing in here is ever committed; .env.example files are.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.yaml
+!secrets.example.yaml
+
+# Bar cache — regenerated from the broker, and large.
+bars/
+*.ttb
+*.ttb.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

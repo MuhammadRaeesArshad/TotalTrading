@@ -1,0 +1,81 @@
+"""Request and response shapes for the connector's HTTP contract.
+
+These mirror services/api-gateway/src/mt5/mt5.types.ts. If you change one,
+change the other — that pairing is the whole interface between the two
+services, and nothing else in the system knows MetaTrader exists.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class Credentials(BaseModel):
+    login: str = Field(..., description="MT5 login number, as a string")
+    password: str
+    server: str = Field(..., description="Server name exactly as the terminal spells it")
+
+
+class SymbolsRequest(Credentials):
+    group: str | None = Field(
+        None,
+        description="MT5 group filter, e.g. '*USD*'. Omit to return everything.",
+    )
+
+
+class CandlesRequest(Credentials):
+    symbol: str
+    timeframe: Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
+    count: int = Field(500, ge=1, le=5000)
+
+
+class AccountInfo(BaseModel):
+    login: str
+    server: str
+    name: str
+    company: str
+    currency: str
+    balance: float
+    equity: float
+    margin: float
+    margin_free: float
+    margin_level: float
+    profit: float
+    leverage: int
+    trade_allowed: bool
+
+
+class SymbolInfo(BaseModel):
+    name: str
+    description: str = ""
+    base_currency: str | None = None
+    profit_currency: str | None = None
+    digits: int = 5
+    point: float = 0.00001
+    trade_contract_size: float = 100_000.0
+    volume_min: float = 0.01
+    volume_max: float = 100.0
+    volume_step: float = 0.01
+    selected: bool = False
+    trade_allowed: bool = True
+
+
+class Candle(BaseModel):
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    tick_volume: int
+    spread: int = 0
+
+
+class Health(BaseModel):
+    status: Literal["ok", "degraded"]
+    mode: Literal["live", "mock"]
+    terminal_available: bool
+    version: str
+    detail: str | None = None

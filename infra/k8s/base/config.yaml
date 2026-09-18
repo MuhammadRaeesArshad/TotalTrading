@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: totaltrading-config
+data:
+  NODE_ENV: production
+  PORT: '4000'
+  MONGO_URI: mongodb://mongo:27017/totaltrading
+  REDIS_URL: redis://redis:6379
+  MT5_CONNECTOR_URL: http://mt5-connector:8001
+  OLLAMA_MODEL: qwen2.5:14b-instruct
+  ALLOW_REGISTRATION: 'false'

@@ -17,11 +17,14 @@ export class BacktestMetrics {
   @Prop() totalTrades: number;
   @Prop() wins: number;
   @Prop() losses: number;
+  /** Percent, 0–100 — not a fraction. The engine reports it this way. */
   @Prop() winRate: number;
   @Prop() netProfit: number;
   @Prop() profitFactor: number;
   @Prop() expectancy: number;
+  /** In account currency. */
   @Prop() maxDrawdown: number;
+  /** Percent of the peak, 0–100. */
   @Prop() maxDrawdownPct: number;
   @Prop() sharpe: number;
   @Prop() avgWin: number;
@@ -118,6 +121,20 @@ export class Backtest {
   equityCurve: EquityPoint[];
 
   @Prop({ default: 0 }) signalsGenerated: number;
+
+  /**
+   * Signals that did not become trades, by reason. Signals minus trades should
+   * always equal the sum of these; a run that drops setups silently cannot be
+   * judged.
+   */
+  @Prop({ type: Object, default: null })
+  skipped: {
+    maxOpen: number;
+    stopGapped: number;
+    stopInsideCosts: number;
+    belowMinVolume: number;
+    noEntryBar: number;
+  } | null;
   @Prop({ default: 0 }) barsProcessed: number;
   @Prop({ default: 0 }) elapsedMs: number;
 

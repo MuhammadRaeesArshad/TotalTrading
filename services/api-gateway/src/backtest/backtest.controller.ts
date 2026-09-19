@@ -1,12 +1,13 @@
 import {
-  BadRequestException, Body, Controller, Get, HttpCode, Param, Post, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthedUser } from '../auth/jwt.strategy';
 import { AccountsService } from '../accounts/accounts.service';
 import { BacktestClient } from './backtest.client';
-import { ImportBarsDto } from './dto';
+import { BacktestService } from './backtest.service';
+import { ImportBarsDto, StartBacktestDto } from './dto';
 
 /** A year of M5 is ~75k bars per pair; this keeps one request bounded. */
 const MAX_SERIES_PER_IMPORT = 200;
@@ -17,7 +18,49 @@ export class BacktestController {
   constructor(
     private readonly engine: BacktestClient,
     private readonly accounts: AccountsService,
+    private readonly runs: BacktestService,
   ) {}
+
+  /** Detectors the engine can run, with their rule versions. */
+  @Get('detectors')
+  detectors() {
+    return this.engine.detectors();
+  }
+
+  @Post('runs')
+  startRun(@CurrentUser() user: AuthedUser, @Body() dto: StartBacktestDto) {
+    return this.runs.start(user.id, dto);
+  }
+
+  @Get('runs')
+  listRuns(@CurrentUser() user: AuthedUser) {
+    return this.runs.list(user.id);
+  }
+
+  @Get('runs/:id')
+  getRun(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.get(user.id, id);
+  }
+
+  @Get('runs/:id/trades')
+  listTrades(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.listTrades(user.id, id);
+  }
+
+  /** Bars around one trade, for the chart shown beside it. */
+  @Get('runs/:id/trades/:tradeId/bars')
+  tradeBars(
+    @CurrentUser() user: AuthedUser,
+    @Param('id') id: string,
+    @Param('tradeId') tradeId: string,
+  ) {
+    return this.runs.tradeBars(user.id, id, tradeId);
+  }
+
+  @Delete('runs/:id')
+  removeRun(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.remove(user.id, id);
+  }
 
   @Get('health')
   health() {

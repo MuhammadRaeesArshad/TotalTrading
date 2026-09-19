@@ -131,6 +131,7 @@ export class Backtest {
   skipped: {
     maxOpen: number;
     stopGapped: number;
+    targetPassed: number;
     stopInsideCosts: number;
     belowMinVolume: number;
     noEntryBar: number;

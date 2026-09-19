@@ -582,3 +582,16 @@ fn a_stop_inside_the_costs_is_skipped_and_counted() {
     assert!(result.trades.is_empty());
     assert_eq!(result.skipped.stop_inside_costs, 1);
 }
+
+/// A gap past the target: the entry bar opens above a long's take-profit. The
+/// engine used to open it and immediately book "take profit" at a loss.
+#[test]
+fn a_gap_past_the_target_is_skipped_and_counted() {
+    // Signal close 1.1000, target 1.1020; bar 6 opens at 1.1030.
+    let bars = flat_with("tp-gap", 20, &[(6, (1.1030, 1.1035, 1.1025, 1.1032))]);
+    let factory = ScriptedFactory { at: vec![5], stop_distance: 0.0010 };
+    let result = run_scripted(bars, &factory, config());
+
+    assert!(result.trades.is_empty(), "no trade when the reward is already gone");
+    assert_eq!(result.skipped.target_passed, 1);
+}

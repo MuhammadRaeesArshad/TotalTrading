@@ -105,6 +105,7 @@ export interface EngineTrade {
 export interface EngineSkipCounts {
   max_open: number;
   stop_gapped: number;
+  target_passed: number;
   stop_inside_costs: number;
   below_min_volume: number;
   no_entry_bar: number;

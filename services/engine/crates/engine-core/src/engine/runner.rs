@@ -59,6 +59,10 @@ pub struct SkipCounts {
     pub max_open: usize,
     /// The entry bar opened beyond the stop: a gap invalidated the setup.
     pub stop_gapped: usize,
+    /// The entry bar opened at or beyond the target, or so close to it that
+    /// the remaining reward sits inside the costs. The move already happened;
+    /// entering would book a "target hit" that loses money.
+    pub target_passed: usize,
     /// The stop sat inside the trading costs (`min_risk_cost_multiple`).
     pub stop_inside_costs: usize,
     /// Position size rounded below the broker's minimum, or equity ran out.
@@ -330,12 +334,26 @@ fn simulate(
             continue;
         }
 
-        // Risk is measured from the price actually filled. A stop inside the
-        // costs is not a tradeable stop.
+        // Stops and targets both have to clear the cost of trading. A stop
+        // inside the costs sizes a huge position; a target inside them books a
+        // "take profit" that loses money once commission is paid.
+        let cost_floor = config.min_risk_cost_multiple * config.cost_offset(entry_bar.spread_points);
+
+        // Risk is measured from the price actually filled.
         let risk_distance = (fill - signal.stop_loss).abs();
-        if risk_distance < config.min_risk_cost_multiple * config.cost_offset(entry_bar.spread_points) {
+        if risk_distance < cost_floor {
             skipped.stop_inside_costs += 1;
             continue;
+        }
+
+        // The mirror of the stop gap: a gap to or past the target leaves no
+        // reward worth the costs. The move already happened.
+        if let Some(tp) = signal.take_profit {
+            let reward = (tp - fill) * signal.direction.sign();
+            if reward <= cost_floor {
+                skipped.target_passed += 1;
+                continue;
+            }
         }
 
         let Some(volume) = config.position_size(realized, risk_distance) else {

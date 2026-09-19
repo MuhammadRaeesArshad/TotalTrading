@@ -60,6 +60,7 @@ export function mapSkipped(s: EngineSkipCounts | undefined) {
   return {
     maxOpen: s.max_open,
     stopGapped: s.stop_gapped,
+    targetPassed: s.target_passed ?? 0,
     stopInsideCosts: s.stop_inside_costs,
     belowMinVolume: s.below_min_volume,
     noEntryBar: s.no_entry_bar,

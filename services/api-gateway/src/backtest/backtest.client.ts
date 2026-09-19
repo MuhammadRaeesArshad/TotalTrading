@@ -26,6 +26,20 @@ export interface ImportReport {
   elapsed_ms: number;
 }
 
+/** A background import, as the engine reports it while it runs. */
+export interface ImportJob {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  created_at: number;
+  finished_at: number | null;
+  series_total: number;
+  series_done: number;
+  bars_done: number;
+  /** e.g. "EURUSD H1" while that series is being pulled. */
+  current: string;
+  report?: ImportReport;
+}
+
 export interface CachedSeries {
   symbol: string;
   timeframe: string;
@@ -203,9 +217,9 @@ export class BacktestClient {
   }
 
   /**
-   * Backfills the bar cache. Deliberately long-running: importing years of M5
-   * takes minutes against a real terminal, and the answer the caller wants is
-   * how far back the data actually goes — which only exists once it is done.
+   * Starts backfilling the bar cache in the background and returns at once
+   * with a job id. Years of history take minutes against a real terminal;
+   * progress is read with `importStatus`.
    */
   importBars(payload: {
     credentials: Mt5Credentials;
@@ -214,7 +228,15 @@ export class BacktestClient {
     from_ts: number;
     to_ts: number;
   }) {
-    return this.request<ImportReport>('POST', '/import', payload, 30 * 60_000);
+    return this.request<{ id: string; status: string }>('POST', '/import', payload, 30_000);
+  }
+
+  importStatus(id: string) {
+    return this.request<ImportJob>('GET', `/imports/${encodeURIComponent(id)}`, undefined, 10_000);
+  }
+
+  imports() {
+    return this.request<ImportJob[]>('GET', '/imports', undefined, 10_000);
   }
 
   private async request<T>(

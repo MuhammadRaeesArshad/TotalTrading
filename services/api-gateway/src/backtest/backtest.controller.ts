@@ -21,6 +21,18 @@ export class BacktestController {
     private readonly runs: BacktestService,
   ) {}
 
+  /** Recent history imports, newest first, with live progress. */
+  @Get('imports')
+  imports() {
+    return this.engine.imports();
+  }
+
+  /** One import's progress, and its per-series report once finished. */
+  @Get('imports/:id')
+  importStatus(@Param('id') id: string) {
+    return this.engine.importStatus(id);
+  }
+
   /** Detectors the engine can run, with their rule versions. */
   @Get('detectors')
   detectors() {

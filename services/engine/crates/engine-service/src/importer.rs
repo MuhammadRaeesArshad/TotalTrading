@@ -23,6 +23,8 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use engine_core::store::{cache_path, write_bars, InputBar};
 use engine_core::Timeframe;
@@ -139,18 +141,40 @@ const OVERLAP_BARS: i64 = 2;
 /// chunk per ~20k bars, three in a row is far more than any holiday.
 const EMPTY_CHUNKS_BEFORE_STOP: usize = 3;
 
+/// Live progress of one import, shared with whoever is watching it. An import
+/// of 28 pairs from 2011 takes minutes; the caller must be able to see where
+/// it is without waiting for the end.
+#[derive(Debug, Default)]
+pub struct ImportProgress {
+    pub series_total: AtomicUsize,
+    pub series_done: AtomicUsize,
+    pub bars_done: AtomicUsize,
+    /// "EURUSD H1" while that series is being pulled.
+    pub current: Mutex<String>,
+}
+
 pub fn import(
     connector_url: &str,
     cache_root: &Path,
     spec: &ImportSpec,
+    progress: &ImportProgress,
 ) -> ImportReport {
     let started = std::time::Instant::now();
     let mut report = ImportReport::default();
+    progress
+        .series_total
+        .store(spec.symbols.len() * spec.timeframes.len(), Ordering::Relaxed);
 
     for symbol in &spec.symbols {
         for timeframe in &spec.timeframes {
-            match import_one(connector_url, cache_root, spec, symbol, timeframe) {
+            if let Ok(mut current) = progress.current.lock() {
+                *current = format!("{symbol} {timeframe}");
+            }
+            let outcome = import_one(connector_url, cache_root, spec, symbol, timeframe);
+            progress.series_done.fetch_add(1, Ordering::Relaxed);
+            match outcome {
                 Ok(series) => {
+                    progress.bars_done.fetch_add(series.bars, Ordering::Relaxed);
                     report.total_bars += series.bars;
                     report.imported.push(series);
                 }

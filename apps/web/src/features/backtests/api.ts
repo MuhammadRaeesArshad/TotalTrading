@@ -1,6 +1,6 @@
 import { request } from '../../lib/api';
 import type {
-  Bars, CachedSeries, ImportReport, Run, StartRunInput, Trade,
+  Bars, CachedSeries, ImportJob, Run, StartRunInput, Trade,
 } from './types';
 
 export const backtestApi = {
@@ -9,15 +9,19 @@ export const backtestApi = {
 
   cache: () => request<{ series: CachedSeries[] }>('/backtest/cache'),
 
-  /** Pulls history from MT5 into the engine's bar cache. Can take minutes. */
+  /** Starts pulling history from MT5 in the background; returns the job id at once. */
   importHistory: (
     accountId: string,
     body: { symbols: string[]; timeframes: string[]; fromTs: number; toTs: number },
   ) =>
-    request<ImportReport>(`/backtest/accounts/${accountId}/import`, {
+    request<{ id: string; status: string }>(`/backtest/accounts/${accountId}/import`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  imports: () => request<ImportJob[]>('/backtest/imports'),
+
+  importStatus: (id: string) => request<ImportJob>(`/backtest/imports/${id}`),
 
   runs: () => request<Run[]>('/backtest/runs'),
 

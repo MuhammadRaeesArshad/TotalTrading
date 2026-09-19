@@ -126,6 +126,19 @@ export interface ImportReport {
   elapsed_ms: number;
 }
 
+/** A history import running in the engine's background. */
+export interface ImportJob {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  created_at: number;
+  finished_at: number | null;
+  series_total: number;
+  series_done: number;
+  bars_done: number;
+  current: string;
+  report?: ImportReport;
+}
+
 export interface StartRunInput {
   detector: string;
   symbols: string[];

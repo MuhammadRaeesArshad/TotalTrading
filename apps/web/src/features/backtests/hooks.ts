@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../lib/api';
 import { backtestApi } from './api';
-import type { Run, Trade } from './types';
+import type { ImportJob, Run, Trade } from './types';
 
 const isLive = (r: Run | null) => r?.status === 'queued' || r?.status === 'running';
 
@@ -76,4 +76,36 @@ export function useRuns() {
   }, [load]);
 
   return { runs, error, reload: load };
+}
+
+/**
+ * The most recent history import, polled while it runs. When one finishes its
+ * full report is fetched once, so the page can show what came in.
+ */
+export function useLatestImport() {
+  const [job, setJob] = useState<ImportJob | null>(null);
+  const timer = useRef<number>();
+
+  const load = useCallback(async () => {
+    window.clearTimeout(timer.current);
+    try {
+      const [latest] = await backtestApi.imports();
+      if (!latest) { setJob(null); return; }
+      if (latest.status === 'running') {
+        setJob(latest);
+        timer.current = window.setTimeout(load, 1_500);
+      } else {
+        setJob(await backtestApi.importStatus(latest.id));
+      }
+    } catch {
+      // The engine being briefly unreachable is not worth an error banner here.
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    return () => window.clearTimeout(timer.current);
+  }, [load]);
+
+  return { job, reload: load };
 }

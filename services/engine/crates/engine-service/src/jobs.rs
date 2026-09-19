@@ -11,6 +11,8 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use engine_core::engine::runner::{Progress, RunResult};
+
+use crate::importer::{ImportProgress, ImportReport};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -201,4 +203,132 @@ fn now() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+// ------------------------------------------------------------------ imports
+
+/// One history import. Held in memory: what it produces lives on disk in the
+/// bar cache, so losing this record on restart loses only the report.
+pub struct ImportJob {
+    pub status: JobStatus,
+    pub created_at: u64,
+    pub finished_at: Option<u64>,
+    pub progress: Arc<ImportProgress>,
+    pub report: Option<ImportReport>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportView {
+    pub id: Uuid,
+    pub status: JobStatus,
+    pub created_at: u64,
+    pub finished_at: Option<u64>,
+    pub series_total: usize,
+    pub series_done: usize,
+    pub bars_done: usize,
+    pub current: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<ImportReport>,
+}
+
+/// Imports run one at a time: they all go through the same terminal, and two
+/// interleaved would each take twice as long and finish no sooner.
+#[derive(Clone, Default)]
+pub struct ImportRegistry {
+    jobs: Arc<RwLock<HashMap<Uuid, ImportJob>>>,
+}
+
+/// Finished imports kept for their reports. Older ones are dropped.
+const KEEP_FINISHED_IMPORTS: usize = 20;
+
+impl ImportRegistry {
+    /// Starts tracking a new import, or returns `None` if one is already running.
+    pub fn try_create(&self) -> Option<(Uuid, Arc<ImportProgress>)> {
+        let mut jobs = self.jobs.write().unwrap();
+        if jobs.values().any(|j| j.status == JobStatus::Running) {
+            return None;
+        }
+
+        // Bound memory: keep only the most recent finished imports.
+        let mut finished: Vec<(Uuid, u64)> = jobs
+            .iter()
+            .filter(|(_, j)| j.status != JobStatus::Running)
+            .map(|(id, j)| (*id, j.created_at))
+            .collect();
+        finished.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        for (id, _) in finished.into_iter().skip(KEEP_FINISHED_IMPORTS) {
+            jobs.remove(&id);
+        }
+
+        let id = Uuid::new_v4();
+        let progress = Arc::new(ImportProgress::default());
+        jobs.insert(id, ImportJob {
+            status: JobStatus::Running,
+            created_at: now(),
+            finished_at: None,
+            progress: Arc::clone(&progress),
+            report: None,
+        });
+        Some((id, progress))
+    }
+
+    pub fn finish(&self, id: Uuid, report: Option<ImportReport>) {
+        if let Some(job) = self.jobs.write().unwrap().get_mut(&id) {
+            job.status = if report.is_some() { JobStatus::Completed } else { JobStatus::Failed };
+            job.finished_at = Some(now());
+            job.report = report;
+        }
+    }
+
+    pub fn get(&self, id: Uuid) -> Option<ImportView> {
+        self.jobs.read().unwrap().get(&id).map(|j| view(id, j, true))
+    }
+
+    /// Newest first, without the per-series reports.
+    pub fn list(&self) -> Vec<ImportView> {
+        let jobs = self.jobs.read().unwrap();
+        let mut views: Vec<ImportView> = jobs.iter().map(|(id, j)| view(*id, j, false)).collect();
+        views.sort_unstable_by(|a, b| b.created_at.cmp(&a.created_at));
+        views
+    }
+}
+
+fn view(id: Uuid, j: &ImportJob, with_report: bool) -> ImportView {
+    use std::sync::atomic::Ordering;
+    ImportView {
+        id,
+        status: j.status,
+        created_at: j.created_at,
+        finished_at: j.finished_at,
+        series_total: j.progress.series_total.load(Ordering::Relaxed),
+        series_done: j.progress.series_done.load(Ordering::Relaxed),
+        bars_done: j.progress.bars_done.load(Ordering::Relaxed),
+        current: j.progress.current.lock().map(|c| c.clone()).unwrap_or_default(),
+        report: if with_report { j.report.clone() } else { None },
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+
+    #[test]
+    fn only_one_import_runs_at_a_time() {
+        let reg = ImportRegistry::default();
+        let (first, _) = reg.try_create().expect("first import starts");
+        assert!(reg.try_create().is_none(), "a second import is refused while one runs");
+
+        reg.finish(first, Some(ImportReport::default()));
+        assert_eq!(reg.get(first).unwrap().status, JobStatus::Completed);
+        assert!(reg.try_create().is_some(), "the next one starts once the first is done");
+    }
+
+    #[test]
+    fn a_panicked_import_is_marked_failed_and_frees_the_slot() {
+        let reg = ImportRegistry::default();
+        let (id, _) = reg.try_create().unwrap();
+        reg.finish(id, None);
+        assert_eq!(reg.get(id).unwrap().status, JobStatus::Failed);
+        assert!(reg.try_create().is_some());
+    }
 }

@@ -3,8 +3,6 @@ import { api, ApiError } from '../../../lib/api';
 import type { Instrument, Mt5Account } from '../../../lib/types';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
-import type { ImportReport } from '../types';
-import { fmtDate } from '../fmt';
 
 const TIMEFRAMES = ['M15', 'M30', 'H1', 'H4', 'D1'];
 
@@ -13,7 +11,7 @@ const TIMEFRAMES = ['M15', 'M30', 'H1', 'H4', 'D1'];
  * against one of your stored accounts — the gateway decrypts its login for the
  * length of the import and nothing else sees it.
  */
-export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+export function ImportModal({ open, onClose, onStarted }: { open: boolean; onClose: () => void; onStarted: () => void }) {
   const [accounts, setAccounts] = useState<Mt5Account[]>([]);
   const [accountId, setAccountId] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -22,11 +20,9 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
   const [fromYear, setFromYear] = useState(new Date().getUTCFullYear() - 5);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ImportReport | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setReport(null);
     setError(null);
     api.listAccounts()
       .then((list) => {
@@ -55,21 +51,22 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
   const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const years = Array.from({ length: 16 }, (_, i) => new Date().getUTCFullYear() - i);
 
+  // Starts the import and closes: it runs in the engine's background, and its
+  // progress shows on the Backtests page rather than in a dialog held open.
   async function submit() {
     setBusy(true);
     setError(null);
-    setReport(null);
     try {
-      const r = await backtestApi.importHistory(accountId, {
+      await backtestApi.importHistory(accountId, {
         symbols,
         timeframes,
         fromTs: Math.floor(Date.UTC(fromYear, 0, 1) / 1000),
         toTs: Math.floor(Date.now() / 1000),
       });
-      setReport(r);
-      onDone();
+      onStarted();
+      onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'The import failed.');
+      setError(e instanceof ApiError ? e.message : 'The import could not start.');
     } finally {
       setBusy(false);
     }
@@ -80,41 +77,16 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
   return (
     <Modal open={open} onClose={busy ? () => undefined : onClose}
       title="Import price history"
-      description="Pulls candles from your MetaTrader terminal into the backtest cache. The terminal must be open and logged in."
+      description="Pulls candles from your MetaTrader terminal into the backtest cache. Runs in the background — you can close this and keep working. The terminal must be open and logged in."
       footer={<>
-        <button className="btn2" onClick={onClose} disabled={busy}>{report ? 'Close' : 'Cancel'}</button>
+        <button className="btn2" onClick={onClose} disabled={busy}>Cancel</button>
         <button className="btn" onClick={submit} disabled={busy || !accountId || !series}>
-          {busy ? 'Importing… this can take minutes' : `Import ${series} series`}
+          {busy ? 'Starting…' : `Import ${series} series`}
         </button>
       </>}>
       {error && <div className="alert err">{error}</div>}
       {accounts.length === 0 && !error && <div className="alert">Add an MT5 account on the Accounts page first.</div>}
 
-      {report ? (
-        <div className="stack">
-          <div className="alert ok">Imported {report.total_bars.toLocaleString()} bars in {(report.elapsed_ms / 1000).toFixed(1)}s.</div>
-          <div className="tw">
-            <table className="tl">
-              <thead><tr><th>Pair</th><th>TF</th><th className="r">Bars</th><th>From</th><th>Note</th></tr></thead>
-              <tbody>
-                {report.imported.map((s) => (
-                  <tr key={`${s.symbol}${s.timeframe}`} style={{ cursor: 'default' }}>
-                    <td>{s.symbol}</td><td className="mono-sm">{s.timeframe}</td>
-                    <td className="r mono-sm">{s.bars.toLocaleString()}</td>
-                    <td className="mono-sm">{s.first_ts ? fmtDate(new Date(s.first_ts * 1000).toISOString()) : '—'}</td>
-                    <td className="dim" style={{ whiteSpace: 'normal', fontSize: 11.5 }}>{s.short_of_request ? 'Terminal history starts later than asked' : ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {report.failed.length > 0 && (
-            <div className="alert err">
-              {report.failed.length} failed: {report.failed.map((f) => `${f.symbol} ${f.timeframe} (${f.error})`).join('; ')}
-            </div>
-          )}
-        </div>
-      ) : (
         <div className="stack">
           <div className="f">
             <label htmlFor="imp-acc">Account</label>
@@ -171,7 +143,6 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
             </div>
           </div>
         </div>
-      )}
     </Modal>
   );
 }

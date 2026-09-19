@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
-import { useRuns } from '../features/backtests/hooks';
+import { useLatestImport, useRuns } from '../features/backtests/hooks';
+import { ImportStatus } from '../features/backtests/components/ImportStatus';
 import { ImportModal } from '../features/backtests/components/ImportModal';
 import { NewRunModal } from '../features/backtests/components/NewRunModal';
 import type { Run } from '../features/backtests/types';
@@ -10,6 +11,14 @@ import { fmtDate, fmtMoney, fmtR, moneyClass } from '../features/backtests/fmt';
 
 export function BacktestsPage() {
   const { runs, error, reload } = useRuns();
+  const { job, reload: reloadImport } = useLatestImport();
+  const [dismissed, setDismissed] = useState<string | null>(() => {
+    try { return localStorage.getItem('tt.importDismissed'); } catch { return null; }
+  });
+  const dismiss = (id: string) => {
+    setDismissed(id);
+    try { localStorage.setItem('tt.importDismissed', id); } catch { /* per-viewer convenience only */ }
+  };
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
@@ -26,6 +35,9 @@ export function BacktestsPage() {
       />
 
       {error && <div className="alert err">{error}</div>}
+      {job && (job.status === 'running' || job.id !== dismissed) && (
+        <ImportStatus job={job} onDismiss={() => dismiss(job.id)} />
+      )}
 
       <div className="card">
         {runs === null && !error && (
@@ -58,7 +70,7 @@ export function BacktestsPage() {
         )}
       </div>
 
-      <ImportModal open={importing} onClose={() => setImporting(false)} onDone={() => undefined} />
+      <ImportModal open={importing} onClose={() => setImporting(false)} onStarted={reloadImport} />
       <NewRunModal open={creating} onClose={() => setCreating(false)}
         onStarted={(run) => { setCreating(false); reload(); navigate(`/backtests/${run._id}`); }} />
     </>

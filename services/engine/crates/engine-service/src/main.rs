@@ -38,12 +38,13 @@ use serde_json::json;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::importer::{ImportReport, ImportSpec};
-use crate::jobs::{JobRegistry, RunSpec};
+use crate::importer::ImportSpec;
+use crate::jobs::{ImportRegistry, JobRegistry, RunSpec};
 
 #[derive(Clone)]
 struct AppState {
     jobs: JobRegistry,
+    imports: ImportRegistry,
     registry: Arc<DetectorRegistry>,
     bar_cache: PathBuf,
     connector_url: String,
@@ -89,6 +90,7 @@ async fn main() {
 
     let state = AppState {
         jobs: JobRegistry::new(),
+        imports: ImportRegistry::default(),
         registry: Arc::new(registry),
         bar_cache: bar_cache.clone(),
         connector_url,
@@ -102,6 +104,8 @@ async fn main() {
         .route("/runs/:id", get(get_run).delete(cancel_run))
         .route("/runs/:id/progress", get(run_progress))
         .route("/import", post(start_import))
+        .route("/imports", get(list_imports))
+        .route("/imports/:id", get(get_import))
         .route("/cache", get(list_cache))
         .route("/bars/:symbol/:timeframe", get(get_bars))
         .layer(CorsLayer::permissive())
@@ -303,26 +307,58 @@ async fn start_import(
         return Err(ApiError::bad_request("`from_ts` must come before `to_ts`."));
     }
 
+    let Some((id, progress)) = state.imports.try_create() else {
+        return Err(ApiError {
+            status: StatusCode::CONFLICT,
+            detail: "An import is already running. It will finish on its own; start the next one after it."
+                .into(),
+        });
+    };
+
     let cache = state.bar_cache.clone();
     let url = state.connector_url.clone();
+    let imports = state.imports.clone();
 
-    let report: ImportReport = tokio::task::spawn_blocking(move || {
-        importer::import(&url, &cache, &spec)
-    })
-    .await
-    .map_err(|e| ApiError::unprocessable(format!("the import task panicked: {e}")))?;
+    // Runs in the background: pulling years of history takes minutes, and the
+    // caller should be free to watch progress rather than hold a request open.
+    // The job owns the credentials only for as long as the import runs.
+    tokio::spawn(async move {
+        let outcome = tokio::task::spawn_blocking(move || importer::import(&url, &cache, &spec, &progress)).await;
+        match outcome {
+            Ok(report) => {
+                tracing::info!(
+                    %id,
+                    imported = report.imported.len(),
+                    failed = report.failed.len(),
+                    bars = report.total_bars,
+                    ms = report.elapsed_ms,
+                    "import finished"
+                );
+                imports.finish(id, Some(report));
+            }
+            Err(e) => {
+                tracing::error!(%id, error = %e, "import task panicked");
+                imports.finish(id, None);
+            }
+        }
+    });
 
-    tracing::info!(
-        imported = report.imported.len(),
-        failed = report.failed.len(),
-        bars = report.total_bars,
-        ms = report.elapsed_ms,
-        "import finished"
-    );
+    Ok((StatusCode::ACCEPTED, Json(json!({ "id": id, "status": "running" }))).into_response())
+}
 
-    // Partial success is the common case — brokers do not offer every symbol.
-    // 200 with both lists beats an error that discards what did work.
-    Ok(Json(report).into_response())
+async fn list_imports(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.imports.list())
+}
+
+async fn get_import(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    state
+        .imports
+        .get(id)
+        .map(|v| Json(v).into_response())
+        .ok_or_else(|| ApiError::not_found("No import with that id. The engine keeps import reports only until it restarts."))
 }
 
 /// What is already in the cache, so a caller can tell what is backtestable

@@ -15,6 +15,14 @@ export enum TradeSource {
 
 export enum TradeStatus { OPEN = 'open', CLOSED = 'closed' }
 
+/** Matches the engine's `ExitReason` serialisation exactly. */
+export enum TradeExitReason {
+  STOP_LOSS = 'stop_loss',
+  TAKE_PROFIT = 'take_profit',
+  /** Still open when the backtest window ended; closed at the last bar. */
+  END_OF_DATA = 'end_of_data',
+}
+
 /**
  * The journal. One row per trade regardless of where it came from, so manual
  * and backtested trades can be compared on the same axes.
@@ -67,6 +75,32 @@ export class Trade {
   @Prop({ default: 0 }) swap: number;
   @Prop({ default: 0 }) netProfit: number;
   @Prop({ default: null }) rMultiple: number | null;
+
+  @Prop({ type: String, enum: TradeExitReason, default: null })
+  exitReason: TradeExitReason | null;
+
+  /** Stop and target both sat inside the exit bar, so the intrabar policy — not
+   *  the data — decided the outcome. Counted by the Verdict view. */
+  @Prop({ default: false }) ambiguousExit: boolean;
+
+  @Prop({ default: null }) barsHeld: number | null;
+
+  /** Furthest the trade went against the position before exit, in R (≥ 0).
+   *  A stopped-out trade reads about 1.0. */
+  @Prop({ default: null }) maeR: number | null;
+
+  /** Furthest the trade went in its favour before exit, in R (≥ 0). A loser
+   *  with a high value here was right about direction and wrong about exit. */
+  @Prop({ default: null }) mfeR: number | null;
+
+  /**
+   * Why the trade was taken: the signal's `detail` map from the detector —
+   * zone bounds, the broken level, flags, `detector_version`. Keys differ per
+   * detector, so the results page renders whatever is here rather than a fixed
+   * list, and a new strategy needs no schema change.
+   */
+  @Prop({ type: Map, of: Number, default: {} })
+  detail: Map<string, number>;
 
   @Prop({ default: '' }) notes: string;
   @Prop({ type: [String], default: [] }) tags: string[];

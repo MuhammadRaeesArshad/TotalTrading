@@ -1,0 +1,17 @@
+[package]
+name = "engine-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The hot path: columnar bars, sliding windows, simulation, metrics. No async, no I/O beyond mmap."
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+bytemuck = { version = "1.14", features = ["derive"] }
+memmap2 = "0.9"
+rayon = "1.8"
+
+[dev-dependencies]
+serde_json = { workspace = true }

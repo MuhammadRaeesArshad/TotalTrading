@@ -51,7 +51,8 @@ services:
       REDIS_URL: redis://redis:6379
       # host.docker.internal reaches the connector running natively on Windows.
       MT5_CONNECTOR_URL: ${MT5_CONNECTOR_URL:-http://host.docker.internal:8001}
-      BACKTEST_ENGINE_URL: http://backtest-engine:8004
+      ENGINE_URL: http://engine:8004
+      AI_ANALYSIS_URL: http://ai-analysis:8003
       CORS_ORIGINS: http://localhost:5173,http://localhost:8080
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set it in infra/docker/.env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set it in infra/docker/.env}
@@ -75,50 +76,37 @@ services:
     depends_on:
       - api-gateway
 
-  # Health endpoints only. Both are placeholders until their build-order step.
-  strategy-engine:
-    build:
-      context: ../../services/strategy-engine
-    restart: unless-stopped
-    ports:
-      - '8002:8000'
-    environment:
-      MONGO_URI: mongodb://mongo:27017/totaltrading
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      mongo:
-        condition: service_healthy
-
+  # Stateless: structured signals in, prose out. No Mongo connection — the
+  # gateway is the only writer. Ollama owns the GPU and runs on the host.
   ai-analysis:
     build:
       context: ../../services/ai-analysis
     restart: unless-stopped
     ports:
-      - '8003:8000'
+      - '8003:8003'
     environment:
-      MONGO_URI: mongodb://mongo:27017/totaltrading
-      # Reaches an Ollama running on the host, where the GPU is.
+      NODE_ENV: development
+      PORT: '8003'
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b-instruct}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
-    depends_on:
-      mongo:
-        condition: service_healthy
 
-  backtest-engine:
+  engine:
     build:
-      context: ../../services/backtest-engine
+      context: ../../services/engine
     restart: unless-stopped
     ports:
       - '8004:8004'
     environment:
       BAR_CACHE_DIR: /var/lib/totaltrading/bars
       PORT: '8004'
-      RUST_LOG: backtest_service=info
+      RUST_LOG: engine_service=info
       # The engine logs into MT5 itself during an import, so it needs the
       # connector directly rather than going back through the gateway.
       MT5_CONNECTOR_URL: ${MT5_CONNECTOR_URL:-http://host.docker.internal:8001}
+      # Live scan results are published here; the gateway persists them.
+      REDIS_URL: redis://redis:6379
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     volumes:
@@ -126,11 +114,12 @@ services:
       # filesystem would neither persist nor page well.
       - bar-cache:/var/lib/totaltrading/bars
     # A scan will use every core it is given. Cap it so a long backtest does
-    # not starve the terminal and the gateway on the same machine.
+    # not starve the MT5 terminal and the gateway on the same machine — this
+    # box has 12 logical cores, so 10 leaves two for them.
     deploy:
       resources:
         limits:
-          cpus: '4'
+          cpus: '10'
 
   # Linux connector that serves synthetic candles. Never reaches a real terminal.
   mt5-connector-mock:

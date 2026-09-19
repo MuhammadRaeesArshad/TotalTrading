@@ -27,6 +27,14 @@ export class BacktestMetrics {
   @Prop() avgWin: number;
   @Prop() avgLoss: number;
   @Prop() longestLosingStreak: number;
+  @Prop() longestWinningStreak: number;
+  @Prop() grossProfit: number;
+  @Prop() grossLoss: number;
+  /** Average trade in multiples of risk. The one cross-pair comparable figure. */
+  @Prop() expectancyR: number;
+  @Prop() finalEquity: number;
+  /** Trades whose outcome the intrabar policy decided. */
+  @Prop() ambiguousExits: number;
 }
 export const BacktestMetricsSchema = SchemaFactory.createForClass(BacktestMetrics);
 
@@ -40,16 +48,33 @@ export class EquityPoint {
 export const EquityPointSchema = SchemaFactory.createForClass(EquityPoint);
 
 /**
- * Written by backtest-engine only. The runner may be Python or Rust — the
- * document shape is the contract between them, so keep it engine-agnostic.
+ * One engine run. The engine computes it and holds no database connection;
+ * the gateway persists it (rule 3). Trades live in the `trades` collection,
+ * keyed by `backtestId`, rather than inline — a run can hold thousands.
  */
 @Schema({ collection: 'backtests', timestamps: true })
 export class Backtest {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Strategy', required: true, index: true })
-  strategyId: Types.ObjectId;
+  /** Null when a run targets a detector directly rather than a saved strategy. */
+  @Prop({ type: Types.ObjectId, ref: 'Strategy', default: null, index: true })
+  strategyId: Types.ObjectId | null;
+
+  /** Registry name of the detector that ran, e.g. `smc_ob`. */
+  @Prop({ required: true, index: true })
+  detector: string;
+
+  /**
+   * The detector's rule version (rule 6). Runs from different versions are not
+   * comparable and must not be charted together.
+   */
+  @Prop({ default: null, index: true })
+  detectorVersion: number | null;
+
+  /** The engine's job id, for polling progress while the run is in flight. */
+  @Prop({ type: String, default: null, index: true })
+  engineRunId: string | null;
 
   /** Frozen copy of the rules as they were at run time — strategies get edited. */
   @Prop({ type: Object, default: {} })
@@ -61,8 +86,14 @@ export class Backtest {
   @Prop({ type: [String], default: [] })
   symbols: string[];
 
+  /** Base timeframe first, then any higher timeframes the detector reads. */
   @Prop({ type: [String], enum: Timeframe, default: [] })
   timeframes: Timeframe[];
+
+  /** How a bar holding both stop and target was scored. Pessimistic is the
+   *  default and the only one to trust (rule 5). */
+  @Prop({ type: String, enum: ['pessimistic', 'optimistic'], default: 'pessimistic' })
+  intrabarPolicy: 'pessimistic' | 'optimistic';
 
   @Prop({ type: Date, required: true }) fromDate: Date;
   @Prop({ type: Date, required: true }) toDate: Date;
@@ -76,7 +107,7 @@ export class Backtest {
   @Prop({ default: 0 })
   progressPct: number;
 
-  /** Which implementation produced this run, e.g. "python-0.1.0" or "rust-0.1.0". */
+  /** Engine build that produced this run, e.g. "rust-0.1.0". */
   @Prop({ default: null })
   engineVersion: string | null;
 
@@ -85,6 +116,10 @@ export class Backtest {
 
   @Prop({ type: [EquityPointSchema], default: [] })
   equityCurve: EquityPoint[];
+
+  @Prop({ default: 0 }) signalsGenerated: number;
+  @Prop({ default: 0 }) barsProcessed: number;
+  @Prop({ default: 0 }) elapsedMs: number;
 
   @Prop({ type: String, default: null })
   error: string | null;

@@ -1,0 +1,43 @@
+# Stateless. Takes already-computed signals and backtest results, asks Ollama
+# for prose, hands it back. It holds no database connection — the gateway is
+# the only Mongo writer.
+#
+# Ollama itself is not in the cluster: it owns the GPU and runs on the host.
+# Point OLLAMA_URL at it per overlay.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-analysis
+spec:
+  selector: { app.kubernetes.io/name: ai-analysis }
+  ports: [{ name: http, port: 8003, targetPort: 8003 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-analysis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ai-analysis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ai-analysis }
+    spec:
+      containers:
+        - name: ai-analysis
+          image: ghcr.io/muhammadraeesarshad/totaltrading-ai-analysis:latest
+          ports: [{ containerPort: 8003 }]
+          envFrom:
+            - configMapRef: { name: totaltrading-config }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          livenessProbe:
+            httpGet: { path: /health, port: 8003 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ['ALL'] }

@@ -10,9 +10,9 @@ export enum Timeframe {
 
 /**
  * A named rule set. The rules themselves are deliberately untyped for now:
- * the strategy definition is still open (project spec §3), and inventing a
- * placeholder shape here would get copied into strategy-engine and the
- * backtester before the real rules land.
+ * each detector's parameters live in the engine (`SmcParams` for `smc_ob`),
+ * and inventing a shape here before a params channel exists would give the
+ * same rules two definitions.
  *
  * When the definition arrives, replace `rules: Record<string, unknown>` with a
  * real sub-schema and add a migration that stamps existing docs with rulesVersion.

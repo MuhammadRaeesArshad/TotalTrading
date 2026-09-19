@@ -1,0 +1,197 @@
+# engine
+
+Replays historical candles through the strategy's detection functions and
+produces a trade log, equity curve and metrics. Written in Rust because this
+is the one service whose job is to chew through tens of millions of bars.
+
+## Measured throughput
+
+Single core, release build, 200-bar rolling high/low plus ATR per bar:
+
+```
+scan: 10,000,000 bars in 340ms
+  29.4M bars/sec
+  34 ns/bar
+```
+
+Ten years of M5 across 28 pairs is roughly 29M bars — about a second on one
+core, and it parallelises across pairs from there. Reproduce it with:
+
+```bash
+cargo run --release --example throughput -p engine-core -- 10000000
+```
+
+Always measure in release. Debug is ~50× slower and tells you nothing.
+
+## Where the speed comes from
+
+Four decisions, in order of how much they matter:
+
+1. **Bars live in a mmap'd columnar file, not in Mongo.** Pulling 20M bars
+   through BSON means a document allocation and a field parse per bar, which
+   costs more than the entire simulation it feeds. A `.ttb` file is `mmap`,
+   cast, iterate — no parse, no allocation, no copy. See
+   `crates/engine-core/src/store/format.rs`.
+2. **Columns, not rows.** A pass reading only `high` and `low` touches a
+   fraction of the cache lines a row layout would, and each column is a
+   contiguous `&[f64]` the autovectoriser can work with.
+3. **O(1) sliding windows.** A rolling 200-bar high recomputed naively is
+   O(n·w) — four billion comparisons over 20M bars, for one indicator on one
+   pair. The monotonic deque in `engine/rolling.rs` makes it O(n): each index
+   is pushed once and popped once, regardless of window width.
+4. **Multi-timeframe alignment precomputed once.** The map from each M5 bar to
+   the last *closed* H4 bar is built in a single linear merge, so higher-
+   timeframe context is an array index in the hot loop rather than a search.
+
+Two more that matter at the margins: detection runs across pairs on rayon
+(`ScanTask` per symbol, nothing shared), and open positions carry a resume
+cursor so the exit search never re-walks a position from its entry bar.
+
+## What it refuses to do
+
+**Look ahead.** A detector never receives the bar array. It receives a
+`BarCtx`, which exposes the series only up to the current bar and has no
+method that reaches forward — lookahead is a compile error, not a suspiciously
+good equity curve. Higher-timeframe context goes through the same gate: you
+get the last bar that has *closed*, never the one still forming.
+`tests/alignment.rs` asserts this directly.
+
+**Pretend an ambiguous bar is a win.** When a bar's range contains both the
+stop and the target, the data genuinely cannot say which came first. The
+default `IntrabarPolicy::Pessimistic` assumes the stop, and every such trade is
+flagged. `Metrics::ambiguous_exits` tells you how much of a result rests on
+that assumption — worth reading next to the headline number.
+
+**Round position size up.** Sizing rounds down to the broker's volume step.
+Rounding up quietly exceeds the configured risk on every trade. A trade that
+cannot be placed at the minimum lot is skipped, not resized.
+
+**Enter on the signal bar's close.** Entry fills on the *next* bar's open,
+moved against the trade by spread and slippage. The signal bar's close is only
+knowable once that bar is over.
+
+## What is deliberately missing
+
+**The rules.** `DetectorRegistry` starts empty and `POST /runs` returns 422
+with an explanation. The strategy definition is still being redefined, and a
+placeholder here would be traded — this crate is the single implementation of
+detection for both backtesting and live scanning (rule 1).
+
+When the definition lands: implement `Detector`, register the factory in
+`build_registry()` in `crates/engine-service/src/main.rs`. Nothing else
+changes.
+
+**Mongo persistence.** Results currently live in the job registry. Writing
+them into the `backtests` and `trades` collections is next; the document shape
+is already fixed by `api-gateway/src/schemas/backtest.schema.ts`, and
+`engineVersion` on that document records which implementation produced a run
+so Python and Rust results stay distinguishable.
+
+**Mongo persistence** (see above) and **live/backtest parity fixtures** — once
+detection exists in both Python and Rust, the same candle files need to run
+through both and assert identical signals, or the two drift apart silently.
+
+## Layout
+
+```
+crates/engine-core/      the hot path. Sync, no network, minimal deps.
+  store/format.rs          the .ttb layout and why it exists
+  store/bars.rs            mmap reader, zero-copy column access
+  store/writer.rs          atomic writer (temp file + rename)
+  engine/rolling.rs        O(1) monotonic window, rolling stats, Wilder, ATR
+  engine/align.rs          multi-timeframe mapping, no-lookahead
+  engine/window.rs         BarCtx — the only view a detector gets
+  engine/detector.rs       the trait, and the hole where the rules go
+  engine/sim.rs            fills, sizing, intrabar policy, P&L
+  engine/metrics.rs        streaming equity curve and metrics
+  engine/runner.rs         parallel detection, sequential portfolio
+crates/engine-service/   axum HTTP, job queue, progress
+```
+
+## HTTP API
+
+| Method | Path                 | Does                                        |
+|--------|----------------------|---------------------------------------------|
+| GET    | `/health`            | Status, cores, cache path, registered rules |
+| POST   | `/import`            | Backfill the bar cache from mt5-connector   |
+| GET    | `/cache`             | What history is on disk, per symbol         |
+| GET    | `/detectors`         | What can be run                             |
+| POST   | `/runs`              | Queue a run; returns `202` and an id        |
+| GET    | `/runs`              | All runs, newest first, without trade logs  |
+| GET    | `/runs/:id`          | One run, with its full result               |
+| GET    | `/runs/:id/progress` | Progress only — cheap to poll               |
+| DELETE | `/runs/:id`          | Cancel; lands within a few thousand bars    |
+
+```bash
+curl -X POST localhost:8004/runs -H 'Content-Type: application/json' -d '{
+  "detector": "your-strategy",
+  "symbols": ["EURUSD", "GBPUSD"],
+  "timeframe": "M5",
+  "higher_timeframes": ["H4", "D1"],
+  "from_ts": 1577836800,
+  "to_ts": 1735689600,
+  "sim": { "initial_balance": 10000, "risk_percent": 1.0 }
+}'
+```
+
+Runs execute on `spawn_blocking` — the engine is CPU-bound and would otherwise
+stall every other request for the length of a scan.
+
+## Filling the bar cache
+
+Nothing is backtestable until history is on disk. The importer pulls it from
+`mt5-connector` and writes `.ttb` files:
+
+```bash
+curl -X POST localhost:8004/import -H 'Content-Type: application/json' -d '{
+  "credentials": {"login": "51234567", "password": "...", "server": "ICMarketsSC-Demo"},
+  "symbols": ["EURUSD", "GBPUSD"],
+  "timeframes": ["M5", "H4", "D1"],
+  "from_ts": 1609459200,
+  "to_ts": 1704067200
+}'
+```
+
+In practice you call it through the gateway — `POST /api/backtest/accounts/:id/import`
+— which decrypts the stored credentials for you and checks the symbols against
+what the broker actually offers first.
+
+### Why the import is not one request to MT5
+
+The terminal will not hand over years of M5 in one call: it keeps only as much
+history as *Max bars in chart* allows, and a single wide `copy_rates_range`
+either truncates or returns nothing. So the import walks the window forward in
+overlapping chunks and stitches them by timestamp in a `BTreeMap` — a bar seen
+twice is stored once, and the result is sorted by construction. `write_bars`
+rejects anything out of order, so a stitching bug fails loudly rather than
+corrupting the cache.
+
+Measured against the mock connector: 225k M5 bars (3 years, one pair) in 4.5s
+across 12 chunks, 38 duplicate bars dropped at the seams. A real terminal is
+slower — it is doing actual I/O — but the shape is the same.
+
+Two things in the response are worth reading:
+
+- **`short_of_request`** — set when the terminal had less history than you
+  asked for. Not an error; brokers cap lower timeframes hard. It decides what
+  date range is honest to backtest over (spec §6.7).
+- **`failed`** — one bad symbol does not abandon the rest. A broker that does
+  not offer NZDCHF is no reason to skip the other twenty-seven pairs.
+
+Credentials travel with the request because the engine logs into MT5 itself;
+they are held for the length of the call, never written, and `Credentials`
+has a redacting `Debug` impl so a stray log line cannot leak a password.
+
+## Running it
+
+```bash
+cargo test                                  # 33 tests
+cargo build --release -p engine-service
+BAR_CACHE_DIR=./bars ./target/release/engine-service
+```
+
+MSRV is 1.75 and `Cargo.lock` is pinned to match, because that is what this was
+verified against. On a newer toolchain, `cargo update` freely.
+
+`BAR_CACHE_DIR` must be a real filesystem — the bar files are memory-mapped, so
+a network mount will be slow and an overlay in a container will not persist.

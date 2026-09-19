@@ -8,6 +8,7 @@ data:
   MONGO_URI: mongodb://mongo:27017/totaltrading
   REDIS_URL: redis://redis:6379
   MT5_CONNECTOR_URL: http://mt5-connector:8001
-  BACKTEST_ENGINE_URL: http://backtest-engine:8004
-  OLLAMA_MODEL: qwen2.5:14b-instruct
+  ENGINE_URL: http://engine:8004
+  AI_ANALYSIS_URL: http://ai-analysis:8003
+  OLLAMA_MODEL: qwen2.5:14b
   ALLOW_REGISTRATION: 'false'

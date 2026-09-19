@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/engine-core", "crates/engine-service"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+# Release profile is the one that matters — a backtest run is always release.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+# Benchmarks need unwinding, and LTO makes the edit-measure loop painful.
+[profile.bench]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+panic = "unwind"

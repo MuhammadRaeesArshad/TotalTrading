@@ -14,8 +14,8 @@ resources:
   - mt5-connector-endpoint.yaml
   - api-gateway.yaml
   - web.yaml
-  - engines.yaml
-  - backtest-engine.yaml
+  - ai-analysis.yaml
+  - engine.yaml
   - ingress.yaml
   # secrets.example.yaml is deliberately not listed — create the real Secret
   # out of band so nothing sensitive lives in git.

@@ -8,8 +8,7 @@ const SERVICE_NOTES: Record<string, string> = {
   'api-gateway': 'Auth, REST, and the only service the browser talks to.',
   mongodb: 'Accounts, strategies, signals, backtests and the journal.',
   'mt5-connector': 'The bridge to MetaTrader. Runs on your Windows machine.',
-  'strategy-engine': 'Scans pairs for setups. Waiting on the strategy rules.',
-  'backtest-engine': 'Replays history at speed. Built; waiting on rules.',
+  engine: 'Detection, backtesting and live scanning. Built; waiting on rules.',
   'ai-analysis': 'Local model writing commentary on finished runs.',
 };
 

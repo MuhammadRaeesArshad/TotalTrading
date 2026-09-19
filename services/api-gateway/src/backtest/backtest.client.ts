@@ -49,7 +49,7 @@ export class BacktestClient {
 
   constructor(config: ConfigService) {
     this.baseUrl = config
-      .get<string>('backtestEngineUrl')!
+      .get<string>('engineUrl')!
       .replace(/\/$/, '');
   }
 

@@ -46,7 +46,7 @@ export function ImportStatus({ job, onDismiss }: { job: ImportJob; onDismiss: ()
           <h3>{job.status === 'failed' ? 'The import stopped unexpectedly' : nothing ? 'Nothing was imported' : 'History imported'}</h3>
           {report && (
             <p>
-              {report.total_bars.toLocaleString()} bars across {report.imported.length} series in {(report.elapsed_ms / 1000).toFixed(0)}s
+              {report.imported.reduce((a, s) => a + (s.added ?? s.bars), 0).toLocaleString()} new bars across {report.imported.length} series in {(report.elapsed_ms / 1000).toFixed(0)}s
               {report.failed.length > 0 && ` · ${report.failed.length} failed`}
             </p>
           )}
@@ -66,13 +66,14 @@ export function ImportStatus({ job, onDismiss }: { job: ImportJob; onDismiss: ()
       {report && report.imported.length > 0 && (
         <div className="tw" style={{ maxHeight: 280, overflowY: 'auto' }}>
           <table className="tl">
-            <thead><tr><th>Pair</th><th>TF</th><th className="r">Bars</th><th>From</th><th className="opt">Note</th></tr></thead>
+            <thead><tr><th>Pair</th><th>TF</th><th className="r">New</th><th className="r">In cache</th><th>From</th><th className="opt">Note</th></tr></thead>
             <tbody>
               {report.imported.map((s) => (
                 <tr key={`${s.symbol}${s.timeframe}`} style={{ cursor: 'default' }}>
                   <td>{s.symbol}</td>
                   <td className="mono-sm">{s.timeframe}</td>
-                  <td className="r mono-sm">{s.bars.toLocaleString()}</td>
+                  <td className="r mono-sm">{(s.added ?? s.bars) > 0 ? `+${(s.added ?? s.bars).toLocaleString()}` : 'up to date'}</td>
+                  <td className="r mono-sm dim">{s.bars.toLocaleString()}</td>
                   <td className="mono-sm">{s.first_ts ? fmtDate(new Date(s.first_ts * 1000).toISOString()) : '—'}</td>
                   <td className="dim opt" style={{ fontSize: 11.5 }}>{s.short_of_request ? 'history starts later than asked' : ''}</td>
                 </tr>

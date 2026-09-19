@@ -26,7 +26,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use engine_core::store::{cache_path, write_bars, InputBar};
+use engine_core::store::{cache_path, write_bars, Bars, InputBar};
 use engine_core::Timeframe;
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,12 @@ pub struct ImportSpec {
 pub struct ImportedSeries {
     pub symbol: String,
     pub timeframe: String,
+    /// Bars in the cache after this import.
     pub bars: usize,
+    /// Bars this import added. Zero on a top-up with nothing new.
+    pub added: usize,
+    /// True when an existing cached series was topped up rather than built.
+    pub incremental: bool,
     pub first_ts: Option<i64>,
     pub last_ts: Option<i64>,
     /// Bars returned more than once across overlapping chunks. Expected to be
@@ -211,46 +216,27 @@ fn import_one(
     let step = timeframe.seconds();
     let chunk_span = step * CHUNK_BARS;
     let overlap = step * OVERLAP_BARS;
+    let path = cache_path(cache_root, symbol, timeframe)?;
 
     // BTreeMap keyed by open time: de-duplicates overlaps and sorts in one go.
     let mut collected: BTreeMap<i64, InputBar> = BTreeMap::new();
+
+    // Incremental: start from what is already cached and fetch only the gaps
+    // at either end. Years of history are pulled once; a later import tops up
+    // in seconds. An unreadable file is ignored and rebuilt in full.
+    let cached = load_cached(&path, &mut collected);
+    let windows = gaps_to_fetch(cached, spec.from_ts, spec.to_ts, overlap);
+
+    let before = collected.len();
     let mut duplicates = 0usize;
-    let mut consecutive_empty = 0usize;
-
-    let mut cursor = spec.from_ts;
-    while cursor < spec.to_ts {
-        let chunk_end = (cursor + chunk_span).min(spec.to_ts);
-
-        let candles = fetch_chunk(
-            connector_url,
-            &spec.credentials,
-            symbol,
-            timeframe_raw,
-            cursor,
-            chunk_end,
+    for (from, to) in windows {
+        fetch_range(
+            connector_url, spec, symbol, timeframe_raw, step, from, to,
+            &mut collected, &mut duplicates,
         )?;
-
-        if candles.is_empty() {
-            consecutive_empty += 1;
-            if consecutive_empty >= EMPTY_CHUNKS_BEFORE_STOP && collected.is_empty() {
-                // Nothing at all, repeatedly. Walking the remaining decade one
-                // chunk at a time would just be slow about saying the same thing.
-                break;
-            }
-        } else {
-            consecutive_empty = 0;
-        }
-
-        for candle in candles {
-            let bar = to_input_bar(&candle)?;
-            if collected.insert(bar.time, bar).is_some() {
-                duplicates += 1;
-            }
-        }
-
-        // Step back by the overlap so a bar straddling the boundary is caught.
-        cursor = (chunk_end - overlap).max(cursor + step);
     }
+    // Overlap with the cached ends is expected, not a sign of a problem.
+    let added = collected.len() - before;
 
     if collected.is_empty() {
         return Err(ImportError::NoBars {
@@ -276,19 +262,109 @@ fn import_one(
         })
     });
 
-    let path = cache_path(cache_root, symbol, timeframe)?;
-    write_bars(&path, symbol, timeframe, &bars)?;
+    // Nothing new: leave the file alone rather than rewrite identical bytes.
+    if cached.is_none() || added > 0 {
+        write_bars(&path, symbol, timeframe, &bars)?;
+    }
 
     Ok(ImportedSeries {
         symbol: symbol.to_string(),
         timeframe: timeframe_raw.to_string(),
         bars: bars.len(),
+        added,
+        incremental: cached.is_some(),
         first_ts,
         last_ts,
         duplicates_dropped: duplicates,
         path: path.display().to_string(),
         short_of_request,
     })
+}
+
+/// The ranges still missing from a cached series `(first, last)`: older
+/// history if the request reaches further back, and anything newer than the
+/// last bar. Each overlaps the cached edge so a boundary bar is never lost.
+/// No cache means the whole request.
+pub fn gaps_to_fetch(cached: Option<(i64, i64)>, from: i64, to: i64, overlap: i64) -> Vec<(i64, i64)> {
+    let Some((first, last)) = cached else {
+        return vec![(from, to)];
+    };
+    let mut gaps = Vec::with_capacity(2);
+    if from < first {
+        gaps.push((from, first + overlap));
+    }
+    if to > last {
+        gaps.push(((last - overlap).max(from), to));
+    }
+    gaps
+}
+
+/// Loads a cached series into `into` and returns its first and last bar time,
+/// or `None` when there is no usable file. The mapping is dropped before
+/// returning, so the file can be replaced afterwards.
+fn load_cached(path: &Path, into: &mut BTreeMap<i64, InputBar>) -> Option<(i64, i64)> {
+    let bars = Bars::open(path).ok()?;
+    if bars.is_empty() {
+        return None;
+    }
+    let (t, o, h, l, c, v, sp) = (
+        bars.time(), bars.open_px(), bars.high(), bars.low(), bars.close(), bars.volume(), bars.spread(),
+    );
+    for i in 0..bars.len() {
+        into.insert(t[i], InputBar {
+            time: t[i], open: o[i], high: h[i], low: l[i], close: c[i], volume: v[i], spread: sp[i],
+        });
+    }
+    Some((t[0], t[bars.len() - 1]))
+}
+
+/// Pulls `[from, to)` in overlapping chunks into `collected`.
+#[allow(clippy::too_many_arguments)]
+fn fetch_range(
+    connector_url: &str,
+    spec: &ImportSpec,
+    symbol: &str,
+    timeframe_raw: &str,
+    step: i64,
+    from: i64,
+    to: i64,
+    collected: &mut BTreeMap<i64, InputBar>,
+    duplicates: &mut usize,
+) -> Result<(), ImportError> {
+    let chunk_span = step * CHUNK_BARS;
+    let overlap = step * OVERLAP_BARS;
+    let mut found_here = 0usize;
+    let mut consecutive_empty = 0usize;
+
+    let mut cursor = from;
+    while cursor < to {
+        let chunk_end = (cursor + chunk_span).min(to);
+        let candles = fetch_chunk(connector_url, &spec.credentials, symbol, timeframe_raw, cursor, chunk_end)?;
+
+        if candles.is_empty() {
+            consecutive_empty += 1;
+            if consecutive_empty >= EMPTY_CHUNKS_BEFORE_STOP && found_here == 0 {
+                // Nothing in this range, repeatedly — typically asking for
+                // history older than the terminal holds. Walking the rest one
+                // chunk at a time would just be slow about saying the same thing.
+                break;
+            }
+        } else {
+            consecutive_empty = 0;
+        }
+
+        for candle in candles {
+            let bar = to_input_bar(&candle)?;
+            found_here += 1;
+            if collected.insert(bar.time, bar).is_some() {
+                *duplicates += 1;
+            }
+        }
+
+        // Step back by the overlap so a bar straddling the boundary is caught.
+        cursor = (chunk_end - overlap).max(cursor + step);
+    }
+    Ok(())
 }
 
 fn fetch_chunk(
@@ -434,5 +510,55 @@ mod tests {
         let printed = format!("{creds:?}");
         assert!(!printed.contains("hunter2"), "password leaked: {printed}");
         assert!(printed.contains("51234567"));
+    }
+}
+
+#[cfg(test)]
+mod incremental_tests {
+    use super::*;
+
+    const H: i64 = 3_600;
+
+    #[test]
+    fn with_nothing_cached_the_whole_request_is_fetched() {
+        assert_eq!(gaps_to_fetch(None, 100, 900, 2 * H), vec![(100, 900)]);
+    }
+
+    #[test]
+    fn a_top_up_fetches_only_what_is_newer_than_the_last_bar() {
+        let gaps = gaps_to_fetch(Some((1_000 * H, 2_000 * H)), 1_000 * H, 2_100 * H, 2 * H);
+        assert_eq!(gaps, vec![(1_998 * H, 2_100 * H)], "from just before the last bar, not from the start");
+    }
+
+    #[test]
+    fn asking_for_older_history_backfills_the_front_too() {
+        let gaps = gaps_to_fetch(Some((1_000 * H, 2_000 * H)), 500 * H, 2_100 * H, 2 * H);
+        assert_eq!(gaps, vec![(500 * H, 1_002 * H), (1_998 * H, 2_100 * H)]);
+    }
+
+    #[test]
+    fn a_request_already_covered_fetches_nothing() {
+        assert!(gaps_to_fetch(Some((1_000 * H, 2_000 * H)), 1_200 * H, 1_800 * H, 2 * H).is_empty());
+    }
+
+    #[test]
+    fn a_cached_series_loads_back_exactly() {
+        let dir = std::env::temp_dir().join(format!("import-cache-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("EURUSD-H1.ttb");
+        let input: Vec<InputBar> = (0..5)
+            .map(|i| InputBar {
+                time: 1_700_000_000 + i * H, open: 1.1, high: 1.2, low: 1.0, close: 1.15,
+                volume: 10 + i as u32, spread: 3,
+            })
+            .collect();
+        write_bars(&path, "EURUSD", Timeframe::H1, &input).unwrap();
+
+        let mut map = BTreeMap::new();
+        let span = load_cached(&path, &mut map);
+        assert_eq!(span, Some((input[0].time, input[4].time)));
+        assert_eq!(map.len(), 5);
+        assert_eq!(map[&input[2].time].volume, 12, "volume and spread survive the round trip");
+        assert!(load_cached(&dir.join("missing.ttb"), &mut BTreeMap::new()).is_none());
     }
 }

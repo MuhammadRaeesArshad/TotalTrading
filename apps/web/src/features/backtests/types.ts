@@ -116,7 +116,11 @@ export interface ImportReport {
   imported: {
     symbol: string;
     timeframe: string;
+    /** In the cache after this import. */
     bars: number;
+    /** Added by this import — zero on a top-up with nothing new. */
+    added?: number;
+    incremental?: boolean;
     first_ts: number | null;
     last_ts: number | null;
     short_of_request: string | null;

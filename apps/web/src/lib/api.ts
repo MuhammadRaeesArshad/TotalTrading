@@ -71,7 +71,8 @@ async function refreshAccess(): Promise<boolean> {
   return refreshing;
 }
 
-async function request<T>(
+/** Authenticated call to the gateway, with one token refresh on 401. */
+export async function request<T>(
   path: string,
   init: RequestInit = {},
   retry = true,

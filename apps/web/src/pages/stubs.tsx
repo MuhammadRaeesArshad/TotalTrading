@@ -112,31 +112,6 @@ export function JobsPage() {
   );
 }
 
-export function BacktestsPage() {
-  return (
-    <>
-      <PageHeader
-        title="Backtests"
-        lede="Historical runs, what they returned, and where the returns came from."
-      />
-      <ComingSoon
-        title="Replay a strategy over real history"
-        planned={[
-          'Equity curve, drawdown, and trade-by-trade log',
-          'Filter results by pair, timeframe and session',
-          'Compare two rule versions over the same window',
-        ]}
-        blockedOn={STRATEGY_BLOCKER}
-      >
-        The engine behind this page is built and measured — a Rust service that
-        scans around 29 million bars a second, which is roughly ten years of M5
-        across every major and minor in about a second. What it does not have yet
-        is a rule set to run.
-      </ComingSoon>
-    </>
-  );
-}
-
 export function AnalysisPage() {
   return (
     <>

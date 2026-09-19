@@ -239,3 +239,105 @@ tbody tr:hover{background:var(--surface-2);}
 .mockbar b{color:var(--fg);font-weight:600;}
 
 .link{color:var(--fg);text-decoration:underline;text-underline-offset:2px;cursor:pointer;background:none;border:none;padding:0;font:inherit;}
+
+/* ========== BACKTEST RESULTS ========== */
+/* Colour rule: green and red mean money and nothing else. Pass/fail is a
+   filled vs struck-hollow mark; wins are filled glyphs, losses hollow; candles
+   are grey. Nothing on this page depends on colour alone. */
+
+.tabs2{display:flex;gap:2px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:3px;margin-bottom:16px;overflow-x:auto;}
+.tabs2 button{background:none;border:none;color:var(--fg-2);font-size:12.5px;padding:7px 13px;border-radius:6px;cursor:pointer;white-space:nowrap;}
+.tabs2 button:hover{color:var(--fg);}
+.tabs2 button[aria-selected="true"]{background:var(--surface-3);color:var(--fg);font-weight:500;}
+
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:16px;}
+.strip>div{padding:13px 15px;border-right:1px solid var(--line);min-width:0;}
+.strip>div:last-child{border-right:none;}
+.strip .l{font-size:11.5px;color:var(--fg-2);font-weight:500;}
+.strip .v{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;letter-spacing:-.02em;margin-top:5px;}
+.strip .s{font-size:11px;color:var(--fg-3);margin-top:3px;}
+@media(max-width:1100px){.strip{grid-template-columns:repeat(4,minmax(0,1fr));}.strip>div:nth-child(4){border-right:none;}.strip>div:nth-child(-n+4){border-bottom:1px solid var(--line);}}
+@media(max-width:600px){.strip{grid-template-columns:repeat(2,minmax(0,1fr));}.strip>div{border-bottom:1px solid var(--line);}.strip>div:nth-child(even){border-right:none;}.strip>div:last-child:nth-child(odd){grid-column:1 / -1;border-right:none;}}
+
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--fg-2);margin:-12px 0 18px;}
+.meta b{color:var(--fg);font-weight:500;font-family:'JetBrains Mono',monospace;font-size:11.5px;}
+
+/* Master / detail: the list scrolls, the selected trade stays in view. */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,520px);gap:14px;align-items:start;}
+.split .detail{position:sticky;top:16px;}
+@media(max-width:1150px){.split{grid-template-columns:1fr;}.split .detail{position:static;}}
+.tl-scroll{max-height:calc(100vh - 290px);overflow:auto;}
+@media(max-width:1150px){.tl-scroll{max-height:none;}}
+table.tl{min-width:640px;font-size:12.5px;}
+table.tl td{padding:8px 12px;} table.tl th{padding:8px 12px;position:sticky;top:0;z-index:1;}
+table.tl tbody tr{cursor:pointer;}
+table.tl tbody tr.sel{background:var(--surface-3);}
+table.tl tbody tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--fg);}
+.inline-detail td{padding:0!important;background:var(--bg);cursor:default;}
+/* Narrow screens: drop the low-priority columns so the table fits the screen,
+   which keeps the inline trade panel inside it rather than scrolling sideways. */
+@media(max-width:1150px){table.tl{min-width:0;}.tl .opt{display:none;}}
+
+.rg{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:0;}
+.rg.w{background:var(--gain);} .rg.l{border:1.5px solid var(--loss);}
+.dir{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-2);}
+.amb{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-2);border:1px solid var(--line-strong);border-radius:4px;padding:0 4px;margin-left:6px;}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);}
+.filters .count{margin-left:auto;font-size:12px;color:var(--fg-3);font-family:'JetBrains Mono',monospace;}
+.fchip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-3);border:1px solid var(--line-strong);color:var(--fg);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;}
+.fchip button{background:none;border:none;cursor:pointer;color:var(--fg-2);width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:14px;line-height:1;}
+.fchip button:hover{background:var(--surface-2);color:var(--fg);}
+
+/* Pass/fail marks. Filled passes; struck hollow fails; dashed hollow is unknown. */
+.mk{display:inline-block;width:14px;height:14px;border-radius:50%;flex-shrink:0;position:relative;}
+.mk.pass{background:var(--fg);}
+.mk.fail{border:1.5px solid var(--fg-2);}
+.mk.fail::after{content:'';position:absolute;left:5px;top:1px;width:1.5px;height:9px;background:var(--fg-2);transform:rotate(45deg);}
+.mk.unknown{border:1.5px dashed var(--fg-3);}
+.crow{display:grid;grid-template-columns:22px minmax(0,1fr) 110px 110px;gap:14px;align-items:start;padding:13px 16px;border-bottom:1px solid var(--line);}
+.crow:last-child{border-bottom:none;}
+.crow.fail{background:var(--surface-2);}
+.crow .t{font-weight:500;font-size:13px;} .crow .why{color:var(--fg-2);font-size:12px;margin-top:3px;}
+.crow .thr,.crow .act{font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;}
+.crow .thr{color:var(--fg-3);}
+@media(max-width:620px){.crow{grid-template-columns:22px minmax(0,1fr) 84px;}.crow .thr{display:none;}}
+.pips{display:flex;gap:5px;flex-wrap:wrap;}
+.verdict-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start;}
+@media(max-width:900px){.verdict-grid{grid-template-columns:1fr;}.verdict-sum{order:-1;}}
+.ledger-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:start;}
+@media(max-width:900px){.ledger-grid{grid-template-columns:1fr;}}
+
+.tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:14px;}
+@media(max-width:900px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr));}.tiles>.tile:last-child:nth-child(odd){grid-column:1 / -1;}}
+.tile{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px 13px;cursor:pointer;display:flex;flex-direction:column;gap:3px;color:var(--fg);font:inherit;}
+.tile:hover{border-color:var(--line-strong);}
+.tile[aria-selected="true"]{border-color:var(--fg);background:var(--surface-2);}
+.tile .l{font-size:11.5px;color:var(--fg-3);}
+.tile .v{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;letter-spacing:-.02em;}
+.eq{font-family:'JetBrains Mono',monospace;font-size:13.5px;line-height:1.9;}
+.eq .op{color:var(--fg-3);padding:0 4px;}
+.eq .res{display:block;font-size:24px;font-weight:600;margin-top:4px;}
+
+.chart{display:block;width:100%;height:auto;}
+.chart text{font-family:'JetBrains Mono',monospace;font-size:10px;fill:var(--fg-3);font-variant-ligatures:none;}
+/* Labels that sit over candles get a halo in the card colour so they stay legible. */
+.chart text.halo{paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;fill:var(--fg-2);}
+.chart .hit{cursor:pointer;}
+.chart .hit:hover .bg{fill:var(--surface-2);}
+/* Selection is shown by the bar itself and the filter chip; a click leaves no
+   ring. Keyboard focus still gets a visible outline. */
+.chart .hit:focus{outline:none;}
+.chart .hit:focus-visible .bg{stroke:var(--fg-2);stroke-width:1;}
+.brushable{touch-action:none;cursor:crosshair;}
+
+.kv{display:grid;grid-template-columns:1fr auto;gap:5px 12px;font-size:12.5px;}
+.kv dt{color:var(--fg-3);} .kv dd{margin:0;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;}
+.big-r{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1;}
+.xbar{height:6px;border-radius:3px;background:var(--surface-3);position:relative;overflow:hidden;}
+.xbar i{position:absolute;top:0;bottom:0;border-radius:3px;}
+
+/* Six-cell strip (Replay): six across, three on tablets, two on phones. */
+.strip.six{grid-template-columns:repeat(6,minmax(0,1fr));}
+@media(max-width:1100px){.strip.six{grid-template-columns:repeat(3,minmax(0,1fr));}.strip.six>div{border-right:1px solid var(--line);border-bottom:1px solid var(--line);}.strip.six>div:nth-child(3n){border-right:none;}.strip.six>div:nth-child(n+4){border-bottom:none;}}
+@media(max-width:600px){.strip.six{grid-template-columns:repeat(2,minmax(0,1fr));}.strip.six>div:nth-child(3n){border-right:1px solid var(--line);}.strip.six>div:nth-child(even){border-right:none;}.strip.six>div:nth-child(n+4){border-bottom:1px solid var(--line);}.strip.six>div:nth-child(n+5){border-bottom:none;}}

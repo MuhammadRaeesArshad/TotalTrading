@@ -238,7 +238,12 @@ service is testable without a terminal.
 
 **Tests.** Non-trivial logic leaves one runnable check behind — the smallest thing that
 fails if the logic breaks. Money paths, detection and parsers get real tests with named
-fixtures. Trivial one-liners get none.
+fixtures. Trivial one-liners get none. A regression test must be shown to fail against
+the old code before it counts.
+
+The web app has no test framework. Its pure logic (`features/*/stats.ts`) is written in
+erasable TypeScript with no imports beyond types, and checked by `apps/web/checks/*.check.ts`
+under plain `node` (22.6+ strips types). Keep it that way rather than adding a framework.
 
 **Commits.** Conventional prefixes (`feat:`, `fix:`, `refactor:`, `docs:`). Say why in the
 body when the diff does not make it obvious.

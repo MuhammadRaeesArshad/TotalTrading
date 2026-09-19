@@ -27,6 +27,11 @@ Read that before changing anything structural.
 - **History import** — pulls years of candles out of MetaTrader in overlapping
   chunks and writes them to a memory-mappable bar cache, and tells you how far
   back the terminal actually reaches.
+- **Backtests in Meridian** — import history from your terminal, run a
+  detector, and read the result: global stats, every trade with its chart and
+  the detector's reasoning beside it, plus Verdict, Ledger, Replay and Anatomy
+  views (Net R by pair, win rate by session, Net R by month). Runs are stored
+  and survive restarts.
 - **`ai-analysis`** — NestJS service wrapping a local Ollama. Takes computed
   figures and returns prose. Refuses anything that is not a flat scalar, so a
   price series cannot reach the model.
@@ -41,12 +46,6 @@ break of structure, entry at the order block forming the next swing — is
 captured as a draft with open questions in
 `docs/specs/2026-09-19-smc-mtf-strategy-draft.md`. It is not built until those
 are answered; a guessed rule would be traded.
-
-**Saving runs, and the results page.** The engine returns runs but nothing
-persists them yet, and Meridian's Backtests page is still a placeholder. The
-agreed design — global stats, every trade in a list, its chart beside it, and
-Verdict, Ledger, Replay and Anatomy tabs — is in
-`docs/specs/2026-09-19-backtest-results-ui-design.md`.
 
 **Order execution.** Switched off, and staying off until backtest and live
 results have been cross-checked on a demo account.
@@ -145,7 +144,7 @@ the cluster anyway. Set that IP per overlay.
 | `GET /detectors` | Registered detectors — `smc_ob` today |
 | `POST /import` | Pulls history from `mt5-connector` into the bar cache |
 | `GET /cache` | What is cached, per symbol and timeframe, with date ranges |
-| `POST /runs` · `GET /runs/:id` | Start a backtest, read its result |
+| `POST /runs` · `GET /runs/:id` | Start a backtest, read its result. `skipped` says why each signal that did not become a trade was dropped |
 | `GET /bars/:symbol/:timeframe?from_ts&to_ts` | Bars for a trade's chart, capped at 5,000 |
 
 Symbols are validated before they touch the file system — only letters,
@@ -174,7 +173,8 @@ docs/
 ```bash
 cd services/api-gateway  && npm test     #  8 — credential encryption
 cd services/ai-analysis  && npm test     # 13 — the narrate-only guard, model readiness
-cd services/engine       && cargo test   # 61 — storage, lookahead, sim, swings, zones, smc_ob
+cd services/engine       && cargo test   # 65 — storage, lookahead, sim, sizing, skips, smc_ob
+node apps/web/checks/stats.check.ts      # the results page's derived numbers
 ```
 
 ## Build order
@@ -188,8 +188,8 @@ Each phase should run before the next starts.
 4. Scale to all pairs and timeframes; recompute D1/H4 on bar close only
 5. ~~Gateway and dashboard skeleton~~ *(WebSocket relay pending)*
 6. ~~The engine~~ — engine, history import, per-trade detail and MAE/MFE,
-   bars route for trade charts. **Next: persist runs through the gateway**
-7. Backtest results page — trades with their charts, then Verdict, Ledger,
+   bars route for trade charts, runs persisted through the gateway
+7. ~~Backtest results page~~ — trades with their charts, Verdict, Ledger,
    Replay, Anatomy
 8. ~~`ai-analysis`~~ — Ollama wired; needs real results to describe
 9. News ingestion, then confirm-before-send execution once parity is proven

@@ -1,7 +1,9 @@
 # Backtest results page
 
 **Date:** 2026-09-19
-**Status:** layout approved by the user; build order below. Mockup of the four analysis
+**Status:** engine, gateway and Meridian built — live at `/backtests` and `/backtests/:runId`,
+verified against a real engine run on synthetic candles. Still open: the first run on real
+history (needs MT5), and per-strategy Verdict criteria (defaults for now). Mockup of the four analysis
 views: https://claude.ai/artifact/1ySke2wL5kMpm5PMFW8UGC (sample data).
 
 ## What the user asked for

@@ -48,6 +48,11 @@ pub struct SimConfig {
     pub intrabar: IntrabarPolicy,
     /// Cap on concurrent open positions per symbol.
     pub max_open_per_symbol: usize,
+    /// A trade is skipped when its stop sits closer to the fill than this many
+    /// times the entry cost (spread plus slippage). Sizing off a stop inside the
+    /// spread puts on a huge position whose costs alone are many R; no broker
+    /// would accept the stop, and no trader would take the trade.
+    pub min_risk_cost_multiple: f64,
 }
 
 impl Default for SimConfig {
@@ -64,7 +69,10 @@ impl Default for SimConfig {
             volume_max: 100.0,
             volume_step: 0.01,
             intrabar: IntrabarPolicy::Pessimistic,
-            max_open_per_symbol: 1,
+            // The user's choice: up to three concurrent positions per pair. At the
+            // default 1% risk that is up to 3% of equity exposed on one symbol.
+            max_open_per_symbol: 3,
+            min_risk_cost_multiple: 2.0,
         }
     }
 }
@@ -200,7 +208,7 @@ impl SimConfig {
 
     /// Half-spread plus slippage, in price, applied against the trade.
     #[inline]
-    fn cost_offset(&self, bar_spread_points: u16) -> f64 {
+    pub(crate) fn cost_offset(&self, bar_spread_points: u16) -> f64 {
         let spread = bar_spread_points as f64 + self.extra_spread_points;
         (spread + self.slippage_points) * self.point_size
     }

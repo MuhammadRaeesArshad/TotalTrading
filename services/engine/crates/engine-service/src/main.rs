@@ -140,8 +140,13 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn detectors(State(state): State<AppState>) -> impl IntoResponse {
     let names = state.registry.names();
+    let versions: serde_json::Map<String, serde_json::Value> = names
+        .iter()
+        .filter_map(|n| state.registry.get(n).ok().map(|f| (n.to_string(), json!(f.version()))))
+        .collect();
     Json(json!({
         "detectors": names,
+        "versions": versions,
         "detail": if names.is_empty() {
             Some("No detector is registered. The strategy rules are still being defined.")
         } else {

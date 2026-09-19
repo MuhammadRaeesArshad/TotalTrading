@@ -22,7 +22,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::align::Alignment;
-use crate::engine::detector::{DetectorFactory, Signal, SignalSink};
+use crate::engine::detector::{DetectorFactory, Direction, Signal, SignalSink};
 use crate::engine::metrics::{EquityPoint, Metrics, MetricsAccumulator};
 use crate::engine::sim::{
     close_position, resolve_exit, BarSlice, OpenPosition, SimConfig, Trade,
@@ -50,8 +50,29 @@ pub struct RunRequest {
     pub sim: SimConfig,
 }
 
+/// Signals that did not become trades, and why. Signals minus trades should
+/// always be explainable from these; a run that silently drops setups cannot
+/// be judged.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct SkipCounts {
+    /// `max_open_per_symbol` positions were already open on the pair.
+    pub max_open: usize,
+    /// The entry bar opened beyond the stop: a gap invalidated the setup.
+    pub stop_gapped: usize,
+    /// The stop sat inside the trading costs (`min_risk_cost_multiple`).
+    pub stop_inside_costs: usize,
+    /// Position size rounded below the broker's minimum, or equity ran out.
+    pub below_min_volume: usize,
+    /// The signal fired on the last bar of the data, with no bar to enter on.
+    pub no_entry_bar: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunResult {
+    /// Which detector produced this, and which version of its rules (rule 6).
+    pub detector: String,
+    pub detector_version: u32,
+    pub skipped: SkipCounts,
     pub metrics: Metrics,
     pub equity_curve: Vec<EquityPoint>,
     pub trades: Vec<Trade>,
@@ -148,9 +169,12 @@ pub fn run(
     queue.sort_unstable_by_key(|&(t, s)| detected[t].signals[s].time);
 
     // ---- Phase 3: portfolio simulation, sequential ------------------------
-    let (metrics, equity_curve, trades) = simulate(&detected, &queue, request);
+    let (metrics, equity_curve, trades, skipped) = simulate(&detected, &queue, request);
 
     Ok(RunResult {
+        detector: factory.name().to_string(),
+        detector_version: factory.version(),
+        skipped,
         metrics,
         equity_curve,
         trades,
@@ -243,10 +267,12 @@ fn simulate(
     detected: &[TaskSignals],
     queue: &[(usize, usize)],
     request: &RunRequest,
-) -> (Metrics, Vec<EquityPoint>, Vec<Trade>) {
-    let mut accumulator =
-        MetricsAccumulator::new(request.sim.initial_balance, queue.len());
+) -> (Metrics, Vec<EquityPoint>, Vec<Trade>, SkipCounts) {
     let mut trades: Vec<Trade> = Vec::with_capacity(queue.len());
+    let mut skipped = SkipCounts::default();
+    // Equity from closed trades. Sizing compounds on this, so it must include
+    // every symbol's exits up to the moment a new position opens.
+    let mut realized = request.sim.initial_balance;
 
     // One open-position slot per task. `max_open_per_symbol` is enforced here
     // rather than in the detector, so the rules never need to know about
@@ -259,18 +285,23 @@ fn simulate(
         let config = &task.sim;
         let bars = task.bars.as_ref();
 
-        // Close anything on this symbol that resolved before this signal's bar.
-        drain_closed(
-            &task.symbol,
-            bars,
-            config,
-            &mut open[task_index],
-            signal.bar_index,
-            &mut accumulator,
-            &mut trades,
-        );
+        // Close every position, on every symbol, that resolved by the close of
+        // the signal bar. Equity is shared, so a loss on one pair must shrink
+        // the next position on another. Nothing past this bar is read.
+        for (k, other) in detected.iter().enumerate() {
+            let until = other.bars.time().partition_point(|&t| t <= signal.time);
+            realized += drain_closed(
+                &other.symbol,
+                other.bars.as_ref(),
+                &other.sim,
+                &mut open[k],
+                until,
+                &mut trades,
+            );
+        }
 
         if open[task_index].len() >= config.max_open_per_symbol {
+            skipped.max_open += 1;
             continue;
         }
 
@@ -278,6 +309,7 @@ fn simulate(
         // once that bar is over.
         let entry_index = signal.bar_index + 1;
         if entry_index >= bars.len() {
+            skipped.no_entry_bar += 1;
             continue;
         }
 
@@ -286,10 +318,28 @@ fn simulate(
             continue;
         };
 
-        // Size off the stop as the detector placed it, but risk is measured
-        // from the price actually filled.
+        // A gap can open the entry bar beyond the stop, which invalidates the
+        // setup. Taking abs() of the distance used to hide this and open a
+        // trade whose stop sat on the winning side of entry.
+        let stop_on_losing_side = match signal.direction {
+            Direction::Long => fill > signal.stop_loss,
+            Direction::Short => fill < signal.stop_loss,
+        };
+        if !stop_on_losing_side {
+            skipped.stop_gapped += 1;
+            continue;
+        }
+
+        // Risk is measured from the price actually filled. A stop inside the
+        // costs is not a tradeable stop.
         let risk_distance = (fill - signal.stop_loss).abs();
-        let Some(volume) = config.position_size(accumulator.equity(), risk_distance) else {
+        if risk_distance < config.min_risk_cost_multiple * config.cost_offset(entry_bar.spread_points) {
+            skipped.stop_inside_costs += 1;
+            continue;
+        }
+
+        let Some(volume) = config.position_size(realized, risk_distance) else {
+            skipped.below_min_volume += 1;
             continue;
         };
 
@@ -322,7 +372,6 @@ fn simulate(
             &task.sim,
             &mut open[task_index],
             bars.len(),
-            &mut accumulator,
             &mut trades,
         );
 
@@ -354,22 +403,24 @@ fn simulate(
     }
 
     let (metrics, curve) = final_accumulator.finish();
-    (metrics, curve, trades)
+    (metrics, curve, trades, skipped)
 }
 
-/// Resolves open positions against every bar up to (not including) `until`.
+/// Resolves open positions against every bar up to (not including) `until`,
+/// appending closed ones to `trades`. Returns the net profit realised, so the
+/// caller keeps equity current for sizing.
 fn drain_closed(
     symbol: &str,
     bars: &Bars,
     config: &SimConfig,
     open: &mut Vec<OpenPosition>,
     until: usize,
-    _accumulator: &mut MetricsAccumulator,
     trades: &mut Vec<Trade>,
-) {
+) -> f64 {
     if open.is_empty() {
-        return;
+        return 0.0;
     }
+    let mut realized = 0.0;
 
     let limit = until.min(bars.len());
     let mut still_open: Vec<OpenPosition> = Vec::with_capacity(open.len());
@@ -391,7 +442,10 @@ fn drain_closed(
         }
 
         match closed {
-            Some(trade) => trades.push(trade),
+            Some(trade) => {
+                realized += trade.net_profit;
+                trades.push(trade);
+            }
             None => {
                 // Resume here next time rather than re-walking from entry.
                 position.scan_cursor = i;
@@ -401,6 +455,7 @@ fn drain_closed(
     }
 
     *open = still_open;
+    realized
 }
 
 #[inline]

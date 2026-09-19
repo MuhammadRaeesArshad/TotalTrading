@@ -337,6 +337,10 @@ impl DetectorFactory for SmcFactory {
         DETECTOR_NAME
     }
 
+    fn version(&self) -> u32 {
+        DETECTOR_VERSION
+    }
+
     fn build(&self) -> Box<dyn Detector> {
         Box::new(SmcDetector::new(self.params))
     }

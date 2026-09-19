@@ -1,13 +1,9 @@
-//! Where the strategy plugs in — and, deliberately, where it is still absent.
+//! Where strategies plug in.
 //!
-//! The rules are not written here, and no placeholder stands in for them. The
-//! strategy definition is still being redefined, and a guessed rule set would
-//! propagate into the live scanner too, giving two implementations of
-//! something nobody has agreed on.
-//!
-//! So the engine is complete and the rules are a hole with a shape. When the
-//! definition lands, implement [`Detector`] and register it — nothing else in
-//! this crate changes.
+//! A strategy implements [`Detector`], lives in `engine/strategies/`, and is
+//! registered in the service's registry — nothing else in this crate changes.
+//! Rules are never guessed: each detector implements a spec in `docs/specs/`,
+//! and a placeholder would propagate into live scanning and be traded.
 //!
 //! # Contract
 //!
@@ -149,6 +145,12 @@ pub trait Detector: Send {
 /// so they cannot be shared across rayon workers — each worker gets its own.
 pub trait DetectorFactory: Send + Sync {
     fn name(&self) -> &str;
+    /// The rules' version (rule 6). Bumped whenever what the detector finds
+    /// changes, and recorded on every run so results from different rules are
+    /// never compared as if they were the same strategy.
+    fn version(&self) -> u32 {
+        0
+    }
     fn build(&self) -> Box<dyn Detector>;
 }
 

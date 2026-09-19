@@ -464,3 +464,121 @@ fn a_stop_hit_inside_the_entry_bar_closes_the_trade_there() {
     assert_eq!(trade.exit_index, 6, "closed on the bar it opened");
     assert!(trade.r_multiple < 0.0);
 }
+
+// ------------------------------------------------------------ sizing and skips
+
+/// Fires a long at each listed bar, with its stop `stop_distance` under the close.
+struct Scripted {
+    at: Vec<usize>,
+    stop_distance: f64,
+}
+
+impl Detector for Scripted {
+    fn name(&self) -> &str {
+        "test-scripted"
+    }
+    fn on_bar(&mut self, ctx: &BarCtx<'_>, out: &mut SignalSink) {
+        if !self.at.contains(&ctx.index()) {
+            return;
+        }
+        let close = ctx.close();
+        out.emit(Signal {
+            bar_index: ctx.index(),
+            time: ctx.time(),
+            direction: Direction::Long,
+            entry: close,
+            stop_loss: close - self.stop_distance,
+            take_profit: Some(close + 2.0 * self.stop_distance),
+            detail: HashMap::new(),
+        });
+    }
+}
+
+struct ScriptedFactory {
+    at: Vec<usize>,
+    stop_distance: f64,
+}
+impl DetectorFactory for ScriptedFactory {
+    fn name(&self) -> &str {
+        "test-scripted"
+    }
+    fn build(&self) -> Box<dyn Detector> {
+        Box::new(Scripted { at: self.at.clone(), stop_distance: self.stop_distance })
+    }
+}
+
+/// Flat bars at 1.1000, with overrides for specific bars.
+fn flat_with(tag: &str, n: usize, overrides: &[(usize, (f64, f64, f64, f64))]) -> Arc<Bars> {
+    let dir = temp_dir(tag);
+    let path = dir.join("EURUSD-H1.ttb");
+    let input: Vec<InputBar> = (0..n)
+        .map(|i| {
+            let (open, high, low, close) = overrides
+                .iter()
+                .find(|(k, _)| *k == i)
+                .map(|(_, v)| *v)
+                .unwrap_or((1.1000, 1.1002, 1.0998, 1.1000));
+            InputBar { time: 1_700_000_000 + i as i64 * 3_600, open, high, low, close, volume: 100, spread: 0 }
+        })
+        .collect();
+    write_bars(&path, "EURUSD", Timeframe::H1, &input).unwrap();
+    Arc::new(Bars::open(&path).unwrap())
+}
+
+fn run_scripted(bars: Arc<Bars>, factory: &ScriptedFactory, sim: SimConfig) -> engine_core::RunResult {
+    let times = bars.time().to_vec();
+    let request = RunRequest {
+        detector: "test-scripted".into(),
+        from_ts: times[0],
+        to_ts: *times.last().unwrap(),
+        sim: sim.clone(),
+    };
+    run(vec![ScanTask { bars, higher: vec![], sim }], &request, factory, &Progress::default()).unwrap()
+}
+
+/// Risk is 1% of *current* equity. The engine used to size every trade off the
+/// starting balance, so a losing run kept betting full size and equity went
+/// deeply negative.
+#[test]
+fn position_size_compounds_on_realised_equity() {
+    // Bar 6 dips through the first trade's stop; the second trade opens later.
+    let bars = flat_with("compound", 30, &[(6, (1.1000, 1.1002, 1.0985, 1.1000))]);
+    let factory = ScriptedFactory { at: vec![5, 20], stop_distance: 0.0010 };
+    let result = run_scripted(bars, &factory, config());
+
+    assert_eq!(result.trades.len(), 2);
+    let (first, second) = (&result.trades[0], &result.trades[1]);
+    assert_eq!(first.exit_reason, ExitReason::StopLoss);
+    assert!((first.volume - 1.00).abs() < 1e-9, "1% of 10,000 over a 10-point stop: {}", first.volume);
+    assert!(
+        (second.volume - 0.99).abs() < 1e-9,
+        "after losing 1R the next trade risks 1% of 9,900: {}",
+        second.volume
+    );
+}
+
+/// A gap that opens the entry bar beyond the stop invalidates the setup.
+/// `abs()` on the distance used to hide it and open a trade anyway.
+#[test]
+fn a_gap_through_the_stop_is_skipped_and_counted() {
+    let bars = flat_with("gap", 20, &[(6, (1.0985, 1.0990, 1.0980, 1.0986))]);
+    let factory = ScriptedFactory { at: vec![5], stop_distance: 0.0010 };
+    let result = run_scripted(bars, &factory, config());
+
+    assert!(result.trades.is_empty());
+    assert_eq!(result.skipped.stop_gapped, 1);
+}
+
+/// A stop inside the costs sizes a huge position whose spread alone is many R.
+#[test]
+fn a_stop_inside_the_costs_is_skipped_and_counted() {
+    let bars = flat_with("tight", 20, &[]);
+    let factory = ScriptedFactory { at: vec![5], stop_distance: 0.0010 };
+    // 12 points of extra spread: the fill lands 0.0012 above the open, so the
+    // real risk is 0.0022 against a 2x cost floor of 0.0024.
+    let sim = SimConfig { extra_spread_points: 12.0, ..config() };
+    let result = run_scripted(bars, &factory, sim);
+
+    assert!(result.trades.is_empty());
+    assert_eq!(result.skipped.stop_inside_costs, 1);
+}

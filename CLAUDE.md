@@ -6,6 +6,28 @@ on one Windows machine — prices, credentials and the model. The UI is called *
 
 Read this file before doing anything. It is the contract between sessions.
 
+## Start here
+
+Every session, in this order:
+
+1. **This file** — the rules and the layout. They are not suggestions.
+2. **`docs/STATE.md`** — what is built, what is not, what decisions are open.
+3. **`docs/specs/`** — only the one for the feature you are touching.
+
+Then, before you claim anything works:
+
+```bash
+bash scripts/verify.sh          # every test in the repo, ~2 min
+```
+
+Bringing the stack up, and the local quirks that will otherwise waste an hour
+(native Rust does not run on this machine; the MT5 connector is not in Docker),
+are in `docs/STATE.md`.
+
+**Update `docs/STATE.md` when you finish a piece of work** — what changed, what
+it opened up, what is still undecided. That file is the next session's memory,
+and stale is worse than empty.
+
 ## Rules
 
 Load-bearing. Breaking one causes a class of bug, not a single bug.

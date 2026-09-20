@@ -7,3 +7,4 @@ export * from './backtest.schema';
 export * from './trade.schema';
 export * from './ai-report.schema';
 export * from './system-log.schema';
+export * from './sweep.schema';

@@ -192,3 +192,34 @@ export interface StartRunInput {
   /** The strategy's own settings. The engine validates them. */
   params?: Record<string, unknown>;
 }
+
+/** One run of a sweep: which setting it moved, and the result. */
+export interface SweepCell {
+  axis: string;
+  value: unknown;
+  runId: string | null;
+  run: Run | null;
+}
+
+export interface Sweep {
+  _id: string;
+  label: string;
+  detector: string;
+  detectorVersion: number | null;
+  baseParams: Record<string, unknown>;
+  symbols: string[];
+  timeframes: string[];
+  fromDate: string;
+  toDate: string;
+  cells: SweepCell[];
+  reusedCount: number;
+  cancelled: boolean;
+  createdAt: string;
+}
+
+export interface StartSweepInput extends StartRunInput {
+  /** Values per numeric setting, endpoints included. */
+  steps?: number;
+  /** Only these settings; empty means every one that declares a range. */
+  only?: string[];
+}

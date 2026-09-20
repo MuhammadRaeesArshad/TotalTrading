@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../lib/api';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
-import type { CachedSeries, CapitalMode, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
+import type { CachedSeries, CapitalMode, IntrabarPolicy, ParamSpec, Run, Strategy, Sweep } from '../types';
+import { sweepSize } from '../sweep';
 import { PairPicker } from './PairPicker';
 import { DateRange } from './DateRange';
 
@@ -17,7 +18,12 @@ const defaults = (specs: ParamSpec[]): Record<string, unknown> =>
  * itself — its description, the timeframes it reads and its own settings — so
  * a new strategy needs no change here.
  */
-export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClose: () => void; onStarted: (run: Run) => void }) {
+export function NewRunModal({ open, onClose, onStarted, onSwept }: {
+  open: boolean;
+  onClose: () => void;
+  onStarted: (run: Run) => void;
+  onSwept: (sweep: Sweep) => void;
+}) {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [series, setSeries] = useState<CachedSeries[]>([]);
   const [detector, setDetector] = useState('');
@@ -31,6 +37,7 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
   const [intrabar, setIntrabar] = useState<IntrabarPolicy>('pessimistic');
   const [capital, setCapital] = useState<CapitalMode>('shared');
   const [busy, setBusy] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -102,15 +109,45 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
     }
   }
 
+  async function submitSweep() {
+    setSweeping(true);
+    setError(null);
+    try {
+      const sweep = await backtestApi.startSweep({
+        detector,
+        symbols,
+        timeframe,
+        higherTimeframes: strategy?.higher_timeframes ?? [],
+        fromTs: fromDay(from),
+        toTs: fromDay(to) + 86_399,
+        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital },
+        params,
+      });
+      onSwept(sweep);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'The sweep could not start.');
+    } finally {
+      setSweeping(false);
+    }
+  }
+
   const valid = detector && timeframe && symbols.length && from && to && from < to && missing.length === 0;
+  // What a sweep of this strategy would actually cost, worked out here rather
+  // than promised vaguely — the repeats collapse, so the honest number is the
+  // distinct one.
+  const sweep = useMemo(() => sweepSize(strategy?.params ?? [], params), [strategy, params]);
 
   return (
     <Modal open={open} onClose={busy ? () => undefined : onClose}
       title="New backtest"
       description="Replays cached history through a strategy. Costs are pessimistic: spread and slippage on every fill, ambiguous bars scored against the strategy."
       footer={<>
-        <button className="btn2" onClick={onClose} disabled={busy}>Cancel</button>
-        <button className="btn" onClick={submit} disabled={busy || !valid}>{busy ? 'Starting…' : 'Run backtest'}</button>
+        <button className="btn2" onClick={onClose} disabled={busy || sweeping}>Cancel</button>
+        <button className="btn2" onClick={submitSweep} disabled={busy || sweeping || !valid || sweep.distinct === 0}
+          title={sweep.distinct === 0 ? 'This strategy declares no settings with a range' : undefined}>
+          {sweeping ? 'Queueing…' : `Sweep all settings · ${sweep.distinct} runs`}
+        </button>
+        <button className="btn" onClick={submit} disabled={busy || sweeping || !valid}>{busy ? 'Starting…' : 'Run backtest'}</button>
       </>}>
       {error && <div className="alert err">{error}</div>}
       {series.length === 0 && !error && <div className="alert">No history is cached yet. Import some first.</div>}
@@ -191,6 +228,16 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
               : `${symbols.length} pairs × $10,000 = $${(symbols.length * 10_000).toLocaleString()} deployed. Each pair's result is its own, so it does not change when you add or drop other pairs.`}
           </span>
         </div>
+
+        {sweep.distinct > 0 && (
+          <div className="alert" style={{ margin: 0 }}>
+            <strong>Sweep all settings</strong> runs this same window {sweep.distinct} times, moving
+            one setting at a time across the range it declares and leaving the rest where they are
+            above. It is {sweep.total} combinations, of which {sweep.total - sweep.distinct} are the
+            settings you already have and are not recomputed. Runs go one at a time, and you can
+            stop it part way — whatever finished is kept.
+          </div>
+        )}
 
         {risk * maxOpen > 5 && (
           <div className="alert err" style={{ margin: 0 }}>

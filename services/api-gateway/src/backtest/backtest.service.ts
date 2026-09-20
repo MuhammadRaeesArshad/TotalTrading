@@ -14,12 +14,24 @@ import {
 import { BacktestClient, EngineJob } from './backtest.client';
 import { mapEquity, mapMetrics, mapSkipped, mapTrade, tradeWindow } from './backtest.mapping';
 import { fingerprint, withSimDefaults } from './backtest.fingerprint';
-import { StartBacktestDto } from './dto';
+import { StartBacktestDto, StartSweepDto } from './dto';
+import { distinctCount, expandSweep, ParamSpec } from './sweep';
+import { Sweep, SweepCellDoc, SweepDocument } from '../schemas/sweep.schema';
 
 const POLL_MS = 1_000;
+/**
+ * A sweep with the run behind each cell attached. Named because the inferred
+ * shape of a populated `lean()` is too large for TypeScript to write down.
+ */
+export interface SweepView extends Record<string, unknown> {
+  cells: (SweepCellDoc & { run: Record<string, unknown> | null })[];
+}
+
 /** Write progress only when it has moved this much, so a long run is not a write per second. */
 const PROGRESS_STEP_PCT = 2;
 const INSERT_CHUNK = 1_000;
+/** A sweep queues at most this many runs; past it, narrow the settings. */
+const MAX_SWEEP_CELLS = 400;
 
 /**
  * Owns a backtest's life from request to stored result.
@@ -35,10 +47,15 @@ const INSERT_CHUNK = 1_000;
 export class BacktestService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(BacktestService.name);
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  /** Sweeps currently choosing their next cell — keeps the queue single-file. */
+  private readonly pumping = new Set<string>();
+  /** run id → the sweep waiting on it, so finishing one starts the next. */
+  private readonly sweepOf = new Map<string, string>();
 
   constructor(
     @InjectModel(Backtest.name) private readonly backtests: Model<BacktestDocument>,
     @InjectModel(Trade.name) private readonly trades: Model<TradeDocument>,
+    @InjectModel(Sweep.name) private readonly sweeps: Model<SweepDocument>,
     private readonly engine: BacktestClient,
   ) {}
 
@@ -180,6 +197,155 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.log.warn(`Could not fingerprint the request: ${String(err)}. Running it.`);
       return null;
+    }
+  }
+
+  /**
+   * Explores a whole strategy: every setting moved across its own declared
+   * range, one at a time, over the same pairs and window.
+   *
+   * The cells are created up front so the sweep's shape is known immediately,
+   * then run one at a time. One at a time matters — the engine saturates every
+   * core it has with rayon, so launching ten at once would not finish sooner,
+   * it would just contend for the same threads (see `CLAUDE.md`, Parallelism).
+   */
+  async startSweep(userId: string, dto: StartSweepDto): Promise<SweepView> {
+    if (dto.fromTs >= dto.toTs) {
+      throw new BadRequestException('The start date must come before the end date.');
+    }
+
+    const { strategies } = await this.engine.detectors();
+    const strategy = (strategies as { name: string; version: number; params: ParamSpec[] }[])
+      .find((s) => s.name === dto.detector);
+    if (!strategy) {
+      throw new BadRequestException(`The engine does not know a strategy called ${dto.detector}.`);
+    }
+
+    const cells = expandSweep(strategy.params ?? [], dto.params ?? {}, {
+      steps: dto.steps,
+      only: dto.only,
+    });
+    if (!cells.length) {
+      throw new BadRequestException(
+        `${dto.detector} declares no settings with a range to sweep.`,
+      );
+    }
+    if (distinctCount(cells) > MAX_SWEEP_CELLS) {
+      throw new BadRequestException(
+        `That is ${distinctCount(cells)} runs. Narrow the settings or lower the step count; ` +
+          `${MAX_SWEEP_CELLS} is the most this will queue at once.`,
+      );
+    }
+
+    const sweep = await this.sweeps.create({
+      userId: new Types.ObjectId(userId),
+      label: `${dto.detector} · sensitivity`,
+      detector: dto.detector,
+      detectorVersion: strategy.version,
+      baseParams: dto.params ?? {},
+      symbols: [...new Set(dto.symbols)],
+      timeframes: [dto.timeframe, ...(dto.higherTimeframes ?? [])],
+      fromDate: new Date(dto.fromTs * 1_000),
+      toDate: new Date(dto.toTs * 1_000),
+      sim: (dto.sim ?? {}) as Record<string, unknown>,
+      cells: cells.map((c) => ({ axis: c.axis, value: c.value, runId: null })),
+    });
+
+    // Kick the queue; it returns immediately and works in the background.
+    void this.pump(String(sweep._id));
+    return this.getSweep(userId, String(sweep._id));
+  }
+
+  async listSweeps(userId: string, archived = false): Promise<Record<string, unknown>[]> {
+    return this.sweeps
+      .find({ userId: new Types.ObjectId(userId), archived: archived ? true : { $ne: true } })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  /** The sweep plus the run behind each cell, which is what a chart needs. */
+  async getSweep(userId: string, id: string): Promise<SweepView> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('No sweep with that id.');
+    const sweep = await this.sweeps
+      .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
+      .lean();
+    if (!sweep) throw new NotFoundException('No sweep with that id.');
+
+    const ids = sweep.cells.map((c) => c.runId).filter(Boolean) as Types.ObjectId[];
+    const runs = await this.backtests
+      .find({ _id: { $in: ids } })
+      .select({ equityCurve: 0, rulesSnapshot: 0 })
+      .lean();
+    const byId = new Map(runs.map((r) => [String(r._id), r]));
+
+    return {
+      ...sweep,
+      cells: sweep.cells.map((c) => ({
+        ...c,
+        run: c.runId ? byId.get(String(c.runId)) ?? null : null,
+      })),
+    };
+  }
+
+  async cancelSweep(userId: string, id: string): Promise<Record<string, unknown>> {
+    const sweep = await this.sweeps
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) },
+        { cancelled: true },
+        { new: true },
+      )
+      .lean();
+    if (!sweep) throw new NotFoundException('No sweep with that id.');
+    return sweep;
+  }
+
+  /**
+   * Starts the next unanswered cell of a sweep, if nothing of it is already
+   * running. Called on launch and again whenever a run finishes, so the queue
+   * advances itself without a scheduler.
+   */
+  private async pump(sweepId: string) {
+    if (this.pumping.has(sweepId)) return;
+    this.pumping.add(sweepId);
+    try {
+      const sweep = await this.sweeps.findById(sweepId).lean();
+      if (!sweep || sweep.cancelled) return;
+
+      const next = sweep.cells.findIndex((c) => !c.runId);
+      if (next < 0) return; // every cell has an answer
+
+      const cell = sweep.cells[next];
+      const run = await this.start(String(sweep.userId), {
+        detector: sweep.detector,
+        params: { ...sweep.baseParams, [cell.axis]: cell.value },
+        symbols: sweep.symbols,
+        timeframe: sweep.timeframes[0],
+        higherTimeframes: sweep.timeframes.slice(1),
+        fromTs: Math.floor(sweep.fromDate.getTime() / 1_000),
+        toTs: Math.floor(sweep.toDate.getTime() / 1_000),
+        sim: sweep.sim,
+      } as StartBacktestDto);
+
+      const reused = run.status === BacktestStatus.COMPLETED;
+      await this.sweeps.updateOne(
+        { _id: sweep._id },
+        {
+          $set: { [`cells.${next}.runId`]: run._id },
+          ...(reused ? { $inc: { reusedCount: 1 } } : {}),
+        },
+      );
+      this.sweepOf.set(String(run._id), sweepId);
+
+      // A reused answer finished the moment it was asked, so keep going
+      // rather than waiting for a completion that already happened.
+      if (reused) {
+        this.pumping.delete(sweepId);
+        await this.pump(sweepId);
+      }
+    } catch (err) {
+      this.log.error(`Sweep ${sweepId} stalled: ${String(err)}`);
+    } finally {
+      this.pumping.delete(sweepId);
     }
   }
 
@@ -339,6 +505,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       },
     );
     this.log.log(`Run ${id} stored: ${docs.length} trades.`);
+    this.advanceSweep(id);
   }
 
   private async fail(id: string, reason: string) {
@@ -347,6 +514,17 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       { _id: id },
       { status: BacktestStatus.FAILED, error: reason, finishedAt: new Date() },
     );
+    // A failed cell still has an answer of a sort, and stopping the whole
+    // sweep because one setting was refused would waste the rest.
+    this.advanceSweep(String(id));
+  }
+
+  /** A run this sweep was waiting on has settled — start the next cell. */
+  private advanceSweep(runId: string) {
+    const sweepId = this.sweepOf.get(runId);
+    if (!sweepId) return;
+    this.sweepOf.delete(runId);
+    void this.pump(sweepId);
   }
 
   private owned(userId: string, id: string) {

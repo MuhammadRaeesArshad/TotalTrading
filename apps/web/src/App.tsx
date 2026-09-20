@@ -6,6 +6,7 @@ import { AccountsPage } from './pages/AccountsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { BacktestsPage } from './pages/BacktestsPage';
 import { BacktestRunPage } from './pages/BacktestRunPage';
+import { SweepPage } from './pages/SweepPage';
 import {
   AnalysisPage, JobsPage, JournalPage, LogsPage,
   PositionsPage, StrategiesPage, SummaryPage,
@@ -29,6 +30,7 @@ function Gate() {
         <Route path="jobs" element={<JobsPage />} />
         <Route path="backtests" element={<BacktestsPage />} />
         <Route path="backtests/:id" element={<BacktestRunPage />} />
+        <Route path="sweeps/:id" element={<SweepPage />} />
         <Route path="analysis" element={<AnalysisPage />} />
         <Route path="journal" element={<JournalPage />} />
         <Route path="logs" element={<LogsPage />} />

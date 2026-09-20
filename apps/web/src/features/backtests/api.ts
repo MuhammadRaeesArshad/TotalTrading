@@ -1,6 +1,6 @@
 import { request } from '../../lib/api';
 import type {
-  Bars, CachedSeries, ImportJob, Run, StartRunInput, Strategy, Trade,
+  Bars, CachedSeries, ImportJob, Run, StartRunInput, StartSweepInput, Strategy, Sweep, Trade,
 } from './types';
 
 export const backtestApi = {
@@ -33,6 +33,16 @@ export const backtestApi = {
     request<Run>('/backtest/runs', { method: 'POST', body: JSON.stringify(input) }),
 
   remove: (id: string) => request<{ deleted: string }>(`/backtest/runs/${id}`, { method: 'DELETE' }),
+
+  startSweep: (input: StartSweepInput) =>
+    request<Sweep>('/backtest/sweeps', { method: 'POST', body: JSON.stringify(input) }),
+
+  sweeps: () => request<Sweep[]>('/backtest/sweeps'),
+
+  sweep: (id: string) => request<Sweep>(`/backtest/sweeps/${id}`),
+
+  cancelSweep: (id: string) =>
+    request<Sweep>(`/backtest/sweeps/${id}/cancel`, { method: 'PATCH' }),
 
   setArchived: (id: string, archived: boolean) =>
     request<Run>(`/backtest/runs/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived }) }),

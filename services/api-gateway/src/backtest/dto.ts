@@ -105,3 +105,17 @@ export class ArchiveRunDto {
   @IsBoolean()
   archived: boolean;
 }
+
+/**
+ * A sweep is a backtest request plus how widely to explore around it. The
+ * settings in `params` are the centre, not the factory defaults.
+ */
+export class StartSweepDto extends StartBacktestDto {
+  /** Values per numeric setting, endpoints included. */
+  @IsOptional() @IsInt() @Min(2) @Max(21)
+  steps?: number;
+
+  /** Sweep only these settings. Empty means every one that declares a range. */
+  @IsOptional() @IsArray() @IsString({ each: true })
+  only?: string[];
+}

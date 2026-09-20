@@ -38,6 +38,18 @@ So a cell is per-pair capital by definition. A true shared-account run is still
 available and still meaningful — it is simply its own run, produced in one go,
 and it does not participate in combining. The UI must not offer to combine one.
 
+## A simplification found while building
+
+**Per-pair *capital* is what gives independence, not per-pair *documents*.**
+Every trade already carries its symbol, so "how did EURUSD do" is a read-time
+filter over a multi-pair result — no separate document per pair is needed to
+combine or separate them afterwards. That collapses step 1b entirely and keeps
+a sweep at 9 × 5 runs rather than 9 × 5 × 28.
+
+The rule that matters is unchanged: only a run made with **per-pair capital**
+can have its pairs pulled apart or recombined, because a shared account makes
+them interdependent.
+
 ## 1. Cells and deduplication
 
 `backtests` keeps holding one document per result; a document now covers **one
@@ -138,8 +150,9 @@ all of them. Selecting cells composes them into one combined result.
 
 - [x] Design agreed
 - [x] 1a · fingerprint + dedup on the existing one-run shape
-- [ ] 1b · decompose a run into per-pair cells (lands with the batch page,
-      since until then N cells have nowhere to be shown)
+- [x] 1b · dropped — per-pair capital plus read-time filtering does the job
 - [ ] 2 · global filters
-- [ ] 3 · sweep launch
+- [x] 3 · sweep launch — `POST /backtest/sweeps`, a queue that runs one cell
+      at a time, and `/sweeps/:id` showing every axis
+- [ ] 3b · a chart per axis instead of a table
 - [ ] 4 · batch page

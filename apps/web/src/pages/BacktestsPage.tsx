@@ -256,7 +256,8 @@ export function BacktestsPage() {
           // landing on a finished result looks like a bug.
           const reused = run.status === 'completed' ? '?reused=1' : '';
           navigate(`/backtests/${run._id}${reused}`);
-        }} />
+        }}
+        onSwept={(sweep) => { setCreating(false); navigate(`/sweeps/${sweep._id}`); }} />
     </>
   );
 }

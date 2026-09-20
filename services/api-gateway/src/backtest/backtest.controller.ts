@@ -8,7 +8,7 @@ import type { AuthedUser } from '../auth/jwt.strategy';
 import { AccountsService } from '../accounts/accounts.service';
 import { BacktestClient } from './backtest.client';
 import { BacktestService } from './backtest.service';
-import { ArchiveRunDto, ImportBarsDto, StartBacktestDto } from './dto';
+import { ArchiveRunDto, ImportBarsDto, StartBacktestDto, StartSweepDto } from './dto';
 
 /** A year of M5 is ~75k bars per pair; this keeps one request bounded. */
 const MAX_SERIES_PER_IMPORT = 200;
@@ -63,6 +63,27 @@ export class BacktestController {
   @Get('runs/:id')
   getRun(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
     return this.runs.get(user.id, id);
+  }
+
+  /** Explores a strategy: every setting across its range, one at a time. */
+  @Post('sweeps')
+  startSweep(@CurrentUser() user: AuthedUser, @Body() dto: StartSweepDto) {
+    return this.runs.startSweep(user.id, dto);
+  }
+
+  @Get('sweeps')
+  listSweeps(@CurrentUser() user: AuthedUser, @Query('archived') archived?: string) {
+    return this.runs.listSweeps(user.id, archived === 'true');
+  }
+
+  @Get('sweeps/:id')
+  getSweep(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.getSweep(user.id, id);
+  }
+
+  @Patch('sweeps/:id/cancel')
+  cancelSweep(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.cancelSweep(user.id, id);
   }
 
   @Get('runs/:id/trades')

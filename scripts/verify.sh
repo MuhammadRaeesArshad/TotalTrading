@@ -35,8 +35,10 @@ check $? "ai-analysis"
 step "web"
 (cd apps/web && npx tsc --noEmit && npm run build >/dev/null && echo "build ok")
 check $? "web build"
-node apps/web/checks/stats.check.ts
-check $? "web stats self-check"
+for c in apps/web/checks/*.check.ts; do
+  node "$c"
+  check $? "web self-check: $c"
+done
 
 if [ "$fail" -eq 0 ]; then printf '\n\033[1mAll checks passed.\033[0m\n'; else printf '\n\033[1mSomething failed — see above.\033[0m\n'; fi
 exit "$fail"

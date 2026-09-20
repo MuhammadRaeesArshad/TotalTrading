@@ -41,6 +41,10 @@ export class SimOverridesDto {
   @IsOptional() @IsIn(['pessimistic', 'optimistic'])
   intrabar?: 'pessimistic' | 'optimistic';
 
+  /** One balance for the whole run, or `initialBalance` per pair. */
+  @IsOptional() @IsIn(['shared', 'per_symbol'])
+  capital?: 'shared' | 'per_symbol';
+
   @IsOptional() @IsNumber() @Min(0)
   commissionPerLot?: number;
 

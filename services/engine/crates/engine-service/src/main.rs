@@ -28,7 +28,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use engine_core::engine::detector::DetectorRegistry;
-use engine_core::engine::runner::{run, RunRequest, ScanTask};
+use engine_core::engine::runner::{run, CapitalMode, RunRequest, ScanTask};
 use engine_core::engine::strategies::smc::SmcFactory;
 use engine_core::engine::strategies::smc_mtf::MtfFactory;
 use engine_core::engine::sim::IntrabarPolicy;
@@ -244,6 +244,7 @@ async fn start_run(
         .collect::<Result<Vec<_>, _>>()?;
 
     let sim = apply_overrides(SimConfig::default(), &spec)?;
+    let capital = parse_capital(&spec)?;
 
     // Open every mapped file up front. Mapping is cheap, and a missing symbol
     // is far better reported now than three minutes into a scan.
@@ -261,6 +262,7 @@ async fn start_run(
         from_ts: spec.from_ts,
         to_ts: spec.to_ts,
         sim,
+        capital,
     };
 
     let jobs = state.jobs.clone();
@@ -493,6 +495,21 @@ fn build_task(
         higher,
         sim: instruments::default_sim_for(symbol, base_sim),
     })
+}
+
+/// How the balance is split across pairs. Absent means one shared account,
+/// which is what every run made before this option existed used.
+fn parse_capital(spec: &RunSpec) -> Result<CapitalMode, ApiError> {
+    let Some(raw) = spec.sim.as_ref().and_then(|o| o.capital.as_deref()) else {
+        return Ok(CapitalMode::Shared);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "shared" => Ok(CapitalMode::Shared),
+        "per_symbol" => Ok(CapitalMode::PerSymbol),
+        other => Err(ApiError::bad_request(format!(
+            "`capital` must be \"shared\" or \"per_symbol\", got \"{other}\"."
+        ))),
+    }
 }
 
 fn apply_overrides(mut sim: SimConfig, spec: &RunSpec) -> Result<SimConfig, ApiError> {

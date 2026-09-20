@@ -6,6 +6,8 @@
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type IntrabarPolicy = 'pessimistic' | 'optimistic';
+
+export type CapitalMode = 'shared' | 'per_symbol';
 export type Direction = 'long' | 'short';
 export type ExitReason = 'stop_loss' | 'take_profit' | 'end_of_data';
 
@@ -54,6 +56,8 @@ export interface Run {
   toDate: string;
   initialBalance: number;
   riskPercentPerTrade: number;
+  /** `shared`: one account for every pair. `per_symbol`: that balance each. */
+  capital?: CapitalMode;
   intrabarPolicy: IntrabarPolicy;
   status: RunStatus;
   progressPct: number;
@@ -181,6 +185,7 @@ export interface StartRunInput {
     maxOpenPerSymbol?: number;
     intrabar?: IntrabarPolicy;
     initialBalance?: number;
+    capital?: CapitalMode;
   };
   /** The strategy's own settings. The engine validates them. */
   params?: Record<string, unknown>;

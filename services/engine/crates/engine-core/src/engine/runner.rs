@@ -42,6 +42,25 @@ pub struct ScanTask {
     pub sim: SimConfig,
 }
 
+/// How `initial_balance` is spread across the pairs in a run.
+///
+/// These answer different questions and neither is more correct. `Shared` is
+/// the account you actually trade: one balance, every pair competing for it,
+/// and a drawdown on one shrinking the next position on another. `PerSymbol`
+/// gives each pair its own untouched copy of the balance, which isolates the
+/// strategy's edge on that pair from what the others were doing — the only way
+/// to compare a pair against itself across runs with different pair sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapitalMode {
+    /// One balance for the whole run. The default, and what a live account is.
+    #[default]
+    Shared,
+    /// `initial_balance` per pair. Total capital is the balance times the
+    /// number of pairs, and one pair blowing up cannot touch the others.
+    PerSymbol,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRequest {
     pub detector: String,
@@ -51,6 +70,11 @@ pub struct RunRequest {
     pub from_ts: i64,
     pub to_ts: i64,
     pub sim: SimConfig,
+    /// Absent means `Shared`, which is what every run before this field
+    /// existed did (rule 6 applies to detection; this is sizing, and old runs
+    /// stay readable because the default reproduces them).
+    #[serde(default)]
+    pub capital: CapitalMode,
 }
 
 /// Signals that did not become trades, and why. Signals minus trades should
@@ -277,9 +301,28 @@ fn simulate(
 ) -> (Metrics, Vec<EquityPoint>, Vec<Trade>, SkipCounts) {
     let mut trades: Vec<Trade> = Vec::with_capacity(queue.len());
     let mut skipped = SkipCounts::default();
-    // Equity from closed trades. Sizing compounds on this, so it must include
-    // every symbol's exits up to the moment a new position opens.
-    let mut realized = request.sim.initial_balance;
+
+    // Which balance each task draws on. One book shared by everything, or one
+    // per symbol — note "per symbol", not per task: the same pair on two
+    // timeframes is still one account.
+    let book_of: Vec<usize> = match request.capital {
+        CapitalMode::Shared => vec![0; detected.len()],
+        CapitalMode::PerSymbol => {
+            let mut seen: Vec<&str> = Vec::new();
+            detected
+                .iter()
+                .map(|t| {
+                    seen.iter().position(|s| *s == t.symbol).unwrap_or_else(|| {
+                        seen.push(&t.symbol);
+                        seen.len() - 1
+                    })
+                })
+                .collect()
+        }
+    };
+    // Equity from closed trades, per book. Sizing compounds on this, so it must
+    // include every exit on that book up to the moment a new position opens.
+    let mut books = vec![request.sim.initial_balance; book_of.iter().max().map_or(1, |n| n + 1)];
 
     // One open-position slot per task. `max_open_per_symbol` is enforced here
     // rather than in the detector, so the rules never need to know about
@@ -293,11 +336,12 @@ fn simulate(
         let bars = task.bars.as_ref();
 
         // Close every position, on every symbol, that resolved by the close of
-        // the signal bar. Equity is shared, so a loss on one pair must shrink
-        // the next position on another. Nothing past this bar is read.
+        // the signal bar — not only this task's, because under a shared book a
+        // loss on one pair must shrink the next position on another. Nothing
+        // past this bar is read.
         for (k, other) in detected.iter().enumerate() {
             let until = other.bars.time().partition_point(|&t| t <= signal.time);
-            realized += drain_closed(
+            books[book_of[k]] += drain_closed(
                 &other.symbol,
                 other.bars.as_ref(),
                 &other.sim,
@@ -359,7 +403,7 @@ fn simulate(
             }
         }
 
-        let Some(volume) = config.position_size(realized, risk_distance) else {
+        let Some(volume) = config.position_size(books[book_of[task_index]], risk_distance) else {
             skipped.below_min_volume += 1;
             continue;
         };
@@ -417,8 +461,12 @@ fn simulate(
     // order, so sort once and replay only the stragglers through it.
     trades.sort_unstable_by_key(|t| t.exit_time);
 
-    let mut final_accumulator =
-        MetricsAccumulator::new(request.sim.initial_balance, trades.len());
+    // Under `PerSymbol` the portfolio started with one balance per pair, so
+    // that is what returns and drawdown are measured against.
+    let mut final_accumulator = MetricsAccumulator::new(
+        request.sim.initial_balance * books.len() as f64,
+        trades.len(),
+    );
     for trade in &trades {
         final_accumulator.record(trade);
     }

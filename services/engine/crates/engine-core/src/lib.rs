@@ -23,8 +23,8 @@ pub use engine::detector::{
     Detector, DetectorFactory, DetectorRegistry, Direction, NoDetector, Signal, SignalSink,
 };
 pub use engine::metrics::{EquityPoint, Metrics};
-pub use engine::runner::{run, task_from_cache, Progress, RunRequest, RunResult, ScanTask,
-    ENGINE_VERSION};
+pub use engine::runner::{run, task_from_cache, CapitalMode, Progress, RunRequest, RunResult,
+    ScanTask, ENGINE_VERSION};
 pub use engine::sim::{ExitReason, IntrabarPolicy, SimConfig, Trade};
 pub use engine::window::BarCtx;
 pub use store::{cache_path, write_bars, Bars, InputBar};

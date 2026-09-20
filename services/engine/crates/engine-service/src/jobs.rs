@@ -61,6 +61,9 @@ pub struct SimOverrides {
     pub max_open_per_symbol: Option<usize>,
     /// "pessimistic" (default) or "optimistic".
     pub intrabar: Option<String>,
+    /// "shared" (default) — one balance for the whole run — or "per_symbol",
+    /// which gives every pair its own copy of `initial_balance`.
+    pub capital: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

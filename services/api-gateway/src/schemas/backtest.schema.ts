@@ -104,6 +104,12 @@ export class Backtest {
   @Prop({ default: 10000 }) initialBalance: number;
   @Prop({ default: 1 }) riskPercentPerTrade: number;
 
+  /** Whether `initialBalance` was one account for the whole run or one per
+   *  pair. Runs stored before this field existed were shared, which is the
+   *  default, so they still read correctly. */
+  @Prop({ type: String, enum: ['shared', 'per_symbol'], default: 'shared' })
+  capital: 'shared' | 'per_symbol';
+
   @Prop({ type: String, enum: BacktestStatus, default: BacktestStatus.QUEUED, index: true })
   status: BacktestStatus;
 

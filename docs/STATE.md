@@ -12,6 +12,10 @@ a stale handoff is worse than none.
   `smc_mtf` (the user's own: H4+H1 direction, M15/M30 break of structure, order
   block entry). Each declares its own description, timeframes and settings;
   the New backtest form builds itself from that.
+- **Two capital modes.** A run either shares one balance across every pair
+  (what a live account is, and the default) or gives each pair its own copy of
+  it. Per-pair isolates a pair's edge from what the others were doing, which
+  is what made a 28-pair run and a solo run of the same pair disagree.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and
@@ -30,7 +34,8 @@ a stale handoff is worse than none.
 
 ## Open decisions
 
-- **Stop a run when the account is blown?** At high risk settings the balance
+- **Stop a run when the account is blown?** (Per-pair capital narrows this but
+  does not answer it — a single pair can still blow its own book.) At high risk settings the balance
   hits zero early and every later signal is skipped for being below the minimum
   lot, while the metrics still read as though it traded on. Proposed: stop the
   run, mark it "account blown" with the date. Not built — it changes what a

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../lib/api';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
-import type { CachedSeries, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
+import type { CachedSeries, CapitalMode, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
 import { PairPicker } from './PairPicker';
 import { DateRange } from './DateRange';
 
@@ -29,6 +29,7 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
   const [risk, setRisk] = useState(1);
   const [maxOpen, setMaxOpen] = useState(3);
   const [intrabar, setIntrabar] = useState<IntrabarPolicy>('pessimistic');
+  const [capital, setCapital] = useState<CapitalMode>('shared');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +91,7 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
         higherTimeframes: strategy?.higher_timeframes ?? [],
         fromTs: fromDay(from),
         toTs: fromDay(to) + 86_399,
-        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar },
+        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital },
         params,
       });
       onStarted(run);
@@ -178,12 +179,26 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
           </div>
         </div>
 
+        <div className="f">
+          <label htmlFor="nr-cap">Capital</label>
+          <select id="nr-cap" value={capital} onChange={(e) => setCapital(e.target.value as CapitalMode)}>
+            <option value="shared">One $10,000 account, shared by every pair</option>
+            <option value="per_symbol">$10,000 per pair, kept separate</option>
+          </select>
+          <span className="hint">
+            {capital === 'shared'
+              ? `What you actually trade: ${symbols.length} pairs competing for one balance, and a drawdown on one shrinking the next position on another.`
+              : `${symbols.length} pairs × $10,000 = $${(symbols.length * 10_000).toLocaleString()} deployed. Each pair's result is its own, so it does not change when you add or drop other pairs.`}
+          </span>
+        </div>
+
         {risk * maxOpen > 5 && (
           <div className="alert err" style={{ margin: 0 }}>
-            {(risk * maxOpen).toFixed(1)}% of the account on one pair, and every pair trades the same
-            account. At this size a normal losing streak wipes it out, and once the balance is gone the
-            rest of the run is skipped rather than traded — the result then says more about the sizing
-            than the strategy. Around 1% per trade is the usual choice.
+            {(risk * maxOpen).toFixed(1)}% of the account on one pair
+            {capital === 'shared' && ', and every pair trades the same account'}. At this size a normal
+            losing streak wipes it out, and once the balance is gone the rest of the run is skipped
+            rather than traded — the result then says more about the sizing than the strategy.
+            Around 1% per trade is the usual choice.
           </div>
         )}
 

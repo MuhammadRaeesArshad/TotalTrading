@@ -22,9 +22,10 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
-/** Same detector, rules, pairs, timeframe and window — differing only in the intrabar policy. */
+/** Same detector, rules, pairs, timeframe, window and capital — differing only in the intrabar policy. */
 function isOptimisticTwin(a: Run, b: Run) {
   return b._id !== a._id && b.status === 'completed' && b.intrabarPolicy === 'optimistic' &&
+    (b.capital ?? 'shared') === (a.capital ?? 'shared') &&
     b.detector === a.detector && b.detectorVersion === a.detectorVersion &&
     b.timeframes[0] === a.timeframes[0] && b.fromDate === a.fromDate && b.toDate === a.toDate &&
     [...b.symbols].sort().join() === [...a.symbols].sort().join();
@@ -69,7 +70,10 @@ export function BacktestRunPage() {
         higherTimeframes: run.timeframes.slice(1),
         fromTs: Math.floor(Date.parse(run.fromDate) / 1000),
         toTs: Math.floor(Date.parse(run.toDate) / 1000),
-        sim: { riskPercent: run.riskPercentPerTrade, initialBalance: run.initialBalance, intrabar: 'optimistic' },
+        sim: {
+          riskPercent: run.riskPercentPerTrade, initialBalance: run.initialBalance,
+          capital: run.capital ?? 'shared', intrabar: 'optimistic',
+        },
       });
       navigate(`/backtests/${twinRun._id}`);
     } catch (e) {
@@ -95,7 +99,7 @@ export function BacktestRunPage() {
     <>
       <PageHeader
         title={title}
-        lede={run ? `${fmtDate(run.fromDate)} – ${fmtDate(run.toDate)} · ${run.riskPercentPerTrade}% risk · $${run.initialBalance.toLocaleString()} start · ${run.intrabarPolicy} intrabar` : undefined}
+        lede={run ? `${fmtDate(run.fromDate)} – ${fmtDate(run.toDate)} · ${run.riskPercentPerTrade}% risk · $${run.initialBalance.toLocaleString()} ${run.capital === 'per_symbol' ? 'per pair' : 'shared'} · ${run.intrabarPolicy} intrabar` : undefined}
         actions={<>
           <Link to="/backtests" className="btn2" style={{ textDecoration: 'none' }}>All backtests</Link>
           {run && <button className="btn-loss" onClick={remove}>Delete</button>}

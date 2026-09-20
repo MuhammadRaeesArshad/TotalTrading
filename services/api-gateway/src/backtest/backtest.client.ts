@@ -69,6 +69,7 @@ export interface EngineRunSpec {
     slippage_points?: number;
     max_open_per_symbol?: number;
     intrabar?: 'pessimistic' | 'optimistic';
+    capital?: 'shared' | 'per_symbol';
   };
 }
 

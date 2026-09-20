@@ -82,6 +82,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       initialBalance: sim.initialBalance ?? 10_000,
       riskPercentPerTrade: sim.riskPercent ?? 1,
       intrabarPolicy: sim.intrabar ?? 'pessimistic',
+      capital: sim.capital ?? 'shared',
       status: BacktestStatus.QUEUED,
     });
 
@@ -100,6 +101,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
           risk_percent: sim.riskPercent,
           max_open_per_symbol: sim.maxOpenPerSymbol,
           intrabar: sim.intrabar,
+          capital: sim.capital,
           commission_per_lot: sim.commissionPerLot,
           extra_spread_points: sim.extraSpreadPoints,
           slippage_points: sim.slippagePoints,

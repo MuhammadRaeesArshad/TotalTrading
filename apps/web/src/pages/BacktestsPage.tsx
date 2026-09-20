@@ -84,7 +84,8 @@ function RunRow({ run, onOpen }: { run: Run; onOpen: () => void }) {
       <td>
         <div className="t-name">{run.detector} <span className="dimmer mono-sm">v{run.detectorVersion ?? '?'}</span></div>
         <div className="t-sub">{run.timeframes[0]} · {run.symbols.length} pair{run.symbols.length === 1 ? '' : 's'}
-          {run.intrabarPolicy === 'optimistic' && ' · optimistic'}</div>
+          {run.intrabarPolicy === 'optimistic' && ' · optimistic'}
+          {run.capital === 'per_symbol' && ' · per-pair capital'}</div>
       </td>
       <td className="mono-sm dim">{fmtDate(run.fromDate)} – {fmtDate(run.toDate)}</td>
       <td><StatusTag run={run} /></td>

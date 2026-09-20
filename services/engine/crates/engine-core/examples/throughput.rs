@@ -14,7 +14,7 @@ use engine_core::engine::detector::{
     Detector, DetectorFactory, Direction, Signal, SignalSink,
 };
 use engine_core::engine::rolling::{Atr, MonotonicWindow};
-use engine_core::engine::runner::{run, Progress, RunRequest, ScanTask};
+use engine_core::engine::runner::{run, CapitalMode, Progress, RunRequest, ScanTask};
 use engine_core::engine::window::BarCtx;
 use engine_core::store::{write_bars, Bars, InputBar};
 use engine_core::{SimConfig, Timeframe};
@@ -180,6 +180,7 @@ fn main() {
         from_ts: i64::MIN,
         to_ts: i64::MAX,
         sim: sim.clone(),
+        capital: CapitalMode::Shared,
     };
 
     let progress = Progress::default();

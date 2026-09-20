@@ -10,7 +10,7 @@ use std::sync::Arc;
 use engine_core::engine::detector::{
     Detector, DetectorFactory, Direction, Signal, SignalSink,
 };
-use engine_core::engine::runner::{run, Progress, RunRequest, ScanTask};
+use engine_core::engine::runner::{run, CapitalMode, Progress, RunRequest, ScanTask};
 use engine_core::engine::sim::{
     close_position, resolve_exit, BarSlice, ExitReason, IntrabarPolicy, OpenPosition, SimConfig,
 };
@@ -287,6 +287,7 @@ fn runs_end_to_end_and_produces_a_coherent_result() {
         from_ts: input[0].time,
         to_ts: input[input.len() - 1].time,
         sim: sim.clone(),
+        capital: CapitalMode::Shared,
     };
 
     let tasks = vec![ScanTask { bars: Arc::clone(&bars), higher: vec![], sim }];
@@ -344,6 +345,7 @@ fn a_run_with_no_symbols_is_an_error_not_an_empty_result() {
         from_ts: 0,
         to_ts: i64::MAX,
         sim: SimConfig::default(),
+        capital: CapitalMode::Shared,
     };
     let progress = Progress::default();
     assert!(run(vec![], &request, &MetronomeFactory, &progress).is_err());
@@ -456,6 +458,7 @@ fn a_stop_hit_inside_the_entry_bar_closes_the_trade_there() {
         from_ts: input[0].time,
         to_ts: input[input.len() - 1].time,
         sim: sim.clone(),
+        capital: CapitalMode::Shared,
     };
     let tasks = vec![ScanTask { bars, higher: vec![], sim }];
     let result = run(tasks, &request, &OneShotFactory, &Progress::default()).unwrap();
@@ -512,8 +515,12 @@ impl DetectorFactory for ScriptedFactory {
 
 /// Flat bars at 1.1000, with overrides for specific bars.
 fn flat_with(tag: &str, n: usize, overrides: &[(usize, (f64, f64, f64, f64))]) -> Arc<Bars> {
+    flat_sym(tag, "EURUSD", n, overrides)
+}
+
+fn flat_sym(tag: &str, symbol: &str, n: usize, overrides: &[(usize, (f64, f64, f64, f64))]) -> Arc<Bars> {
     let dir = temp_dir(tag);
-    let path = dir.join("EURUSD-H1.ttb");
+    let path = dir.join(format!("{symbol}-H1.ttb"));
     let input: Vec<InputBar> = (0..n)
         .map(|i| {
             let (open, high, low, close) = overrides
@@ -524,7 +531,7 @@ fn flat_with(tag: &str, n: usize, overrides: &[(usize, (f64, f64, f64, f64))]) -
             InputBar { time: 1_700_000_000 + i as i64 * 3_600, open, high, low, close, volume: 100, spread: 0 }
         })
         .collect();
-    write_bars(&path, "EURUSD", Timeframe::H1, &input).unwrap();
+    write_bars(&path, symbol, Timeframe::H1, &input).unwrap();
     Arc::new(Bars::open(&path).unwrap())
 }
 
@@ -536,6 +543,7 @@ fn run_scripted(bars: Arc<Bars>, factory: &ScriptedFactory, sim: SimConfig) -> e
         from_ts: times[0],
         to_ts: *times.last().unwrap(),
         sim: sim.clone(),
+        capital: CapitalMode::Shared,
     };
     run(vec![ScanTask { bars, higher: vec![], sim }], &request, factory, &Progress::default()).unwrap()
 }
@@ -598,4 +606,54 @@ fn a_gap_past_the_target_is_skipped_and_counted() {
 
     assert!(result.trades.is_empty(), "no trade when the reward is already gone");
     assert_eq!(result.skipped.target_passed, 1);
+}
+
+/// Two pairs, one losing trade on the first before the second trades again.
+/// Under one shared account that loss shrinks the next position on the *other*
+/// pair; under `PerSymbol` each pair draws on its own untouched balance. This
+/// is the whole difference between the two modes, and it is why a 28-pair run
+/// and a solo run of the same pair reported different trades.
+#[test]
+fn per_symbol_capital_keeps_one_pairs_loss_off_another_pairs_sizing() {
+    // EURUSD dips through its first stop at bar 6; GBPUSD stays flat throughout.
+    let losing = flat_sym("cap-a", "EURUSD", 30, &[(6, (1.1000, 1.1002, 1.0985, 1.1000))]);
+    let flat = flat_sym("cap-b", "GBPUSD", 30, &[]);
+    let factory = ScriptedFactory { at: vec![5, 20], stop_distance: 0.0010 };
+
+    let volume_of_second_gbp = |capital: CapitalMode| {
+        let sim = config();
+        let times = losing.time().to_vec();
+        let request = RunRequest {
+            params: serde_json::Value::Null,
+            detector: "test-scripted".into(),
+            from_ts: times[0],
+            to_ts: *times.last().unwrap(),
+            sim: sim.clone(),
+            capital,
+        };
+        let tasks = vec![
+            ScanTask { bars: Arc::clone(&losing), higher: vec![], sim: sim.clone() },
+            ScanTask { bars: Arc::clone(&flat), higher: vec![], sim },
+        ];
+        let result = run(tasks, &request, &factory, &Progress::default()).unwrap();
+        result
+            .trades
+            .iter()
+            .filter(|t| t.symbol == "GBPUSD")
+            .max_by_key(|t| t.entry_time)
+            .expect("GBPUSD traded")
+            .volume
+    };
+
+    let shared = volume_of_second_gbp(CapitalMode::Shared);
+    let isolated = volume_of_second_gbp(CapitalMode::PerSymbol);
+
+    assert!(
+        (shared - 0.99).abs() < 1e-9,
+        "shared book: EURUSD lost 1% first, so 1% of 9,900 — got {shared}"
+    );
+    assert!(
+        (isolated - 1.00).abs() < 1e-9,
+        "own book: GBPUSD still has the full 10,000 — got {isolated}"
+    );
 }

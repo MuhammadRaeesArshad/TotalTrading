@@ -181,7 +181,9 @@ export class BacktestClient {
   }
 
   health() {
-    return this.request<Record<string, unknown>>('GET', '/health', undefined, 10_000);
+    return this.request<Record<string, unknown> & { engine_version?: string }>(
+      'GET', '/health', undefined, 10_000,
+    );
   }
 
   cache() {

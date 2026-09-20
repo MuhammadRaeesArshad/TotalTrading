@@ -118,6 +118,12 @@ export class Backtest {
   @Prop({ type: Boolean, default: false, index: true })
   archived: boolean;
 
+  /** Hash of everything that decides this result. A completed run with the
+   *  same one is the same answer, so it is returned instead of running again.
+   *  See `backtest.fingerprint.ts`. */
+  @Prop({ type: String, index: true, default: null })
+  fingerprint: string | null;
+
   @Prop({ default: 0 })
   progressPct: number;
 
@@ -159,3 +165,5 @@ export class Backtest {
 
 export const BacktestSchema = SchemaFactory.createForClass(Backtest);
 BacktestSchema.index({ userId: 1, createdAt: -1 });
+// The cache lookup: one user's completed run with this exact fingerprint.
+BacktestSchema.index({ userId: 1, fingerprint: 1, status: 1 });

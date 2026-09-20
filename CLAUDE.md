@@ -55,7 +55,10 @@ Load-bearing. Breaking one causes a class of bug, not a single bug.
    cost was removed is not a result.
 6. **Detection changes are versioned.** Changing a detector's rules bumps its version,
    and stored backtests record the version that produced them. Results across versions
-   are not comparable and must not be charted together.
+   are not comparable and must not be charted together. **The same obligation applies to
+   the simulator:** changing what a fill, a cost or an exit means bumps the engine crate
+   version, because results are cached by a fingerprint that includes it and nothing else
+   would invalidate them.
 7. **The LLM never detects.** It receives already-computed structured signals and writes
    prose. It never decides what a setup is, and never sees raw bars.
 8. **No live order execution until demo parity is proven.** Execution stays off until

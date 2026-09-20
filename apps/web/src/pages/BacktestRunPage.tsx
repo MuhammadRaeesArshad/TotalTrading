@@ -128,6 +128,13 @@ export function BacktestRunPage() {
         </div>
       )}
 
+      {params.get('reused') === '1' && (
+        <div className="alert">
+          This exact backtest had already been run — same strategy, settings, pairs, window and
+          costs — so these are its stored results rather than a fresh computation. Change any of
+          them and it runs for real.
+        </div>
+      )}
       {(error || actionError || tradesError) && <div className="alert err">{error || actionError || tradesError}</div>}
       {!run && !error && <div className="card card-b"><div className="skel" style={{ width: '40%' }} /></div>}
 

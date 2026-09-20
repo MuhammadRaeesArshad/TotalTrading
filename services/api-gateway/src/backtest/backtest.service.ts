@@ -13,6 +13,7 @@ import {
 } from '../schemas';
 import { BacktestClient, EngineJob } from './backtest.client';
 import { mapEquity, mapMetrics, mapSkipped, mapTrade, tradeWindow } from './backtest.mapping';
+import { fingerprint, withSimDefaults } from './backtest.fingerprint';
 import { StartBacktestDto } from './dto';
 
 const POLL_MS = 1_000;
@@ -69,6 +70,25 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     const higher = [...new Set(dto.higherTimeframes ?? [])].filter((t) => t !== dto.timeframe);
     const sim = dto.sim ?? {};
 
+    // A backtest is a pure function of its inputs. If this exact question has
+    // already been answered, hand back the answer rather than spending minutes
+    // recomputing it — the whole point of the fingerprint.
+    const key = await this.fingerprintOf(dto, symbols, higher);
+    if (key) {
+      const hit = await this.backtests
+        .findOne({
+          userId: new Types.ObjectId(userId),
+          fingerprint: key,
+          status: BacktestStatus.COMPLETED,
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (hit) {
+        this.log.log(`Reusing ${String(hit._id)} for ${key} — identical request.`);
+        return hit;
+      }
+    }
+
     const doc = await this.backtests.create({
       userId: new Types.ObjectId(userId),
       strategyId: null,
@@ -83,6 +103,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       riskPercentPerTrade: sim.riskPercent ?? 1,
       intrabarPolicy: sim.intrabar ?? 'pessimistic',
       capital: sim.capital ?? 'shared',
+      fingerprint: key,
       status: BacktestStatus.QUEUED,
     });
 
@@ -124,6 +145,44 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** `archived` picks which shelf: the working list, or the one put aside. */
+  /**
+   * The cache key for a request, or null when it cannot be computed — the
+   * engine being unreachable, or a detector it does not know. A missing key
+   * only costs a cache miss, so it never blocks a run.
+   */
+  private async fingerprintOf(
+    dto: StartBacktestDto,
+    symbols: string[],
+    higher: string[],
+  ): Promise<string | null> {
+    try {
+      const [health, detectors] = await Promise.all([
+        this.engine.health(),
+        this.engine.detectors(),
+      ]);
+      const version = detectors.versions?.[dto.detector];
+      // An unknown detector means the engine is about to refuse the run
+      // anyway; hashing it would only store a key for a result never produced.
+      if (version === undefined || !health.engine_version) return null;
+
+      return fingerprint({
+        detector: dto.detector,
+        detectorVersion: version,
+        params: (dto.params ?? {}) as Record<string, unknown>,
+        symbols,
+        timeframe: dto.timeframe,
+        higherTimeframes: higher,
+        fromTs: dto.fromTs,
+        toTs: dto.toTs,
+        sim: withSimDefaults(dto.sim),
+        engineVersion: health.engine_version,
+      });
+    } catch (err) {
+      this.log.warn(`Could not fingerprint the request: ${String(err)}. Running it.`);
+      return null;
+    }
+  }
+
   list(userId: string, archived = false) {
     return this.backtests
       .find({ userId: new Types.ObjectId(userId), archived: archived ? true : { $ne: true } })

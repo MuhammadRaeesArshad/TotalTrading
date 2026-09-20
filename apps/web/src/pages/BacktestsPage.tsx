@@ -248,7 +248,15 @@ export function BacktestsPage() {
 
       <ImportModal open={importing} onClose={() => setImporting(false)} onStarted={reloadImport} />
       <NewRunModal open={creating} onClose={() => setCreating(false)}
-        onStarted={(run) => { setCreating(false); reload(); navigate(`/backtests/${run._id}`); }} />
+        onStarted={(run) => {
+          setCreating(false);
+          reload();
+          // A completed run straight out of start() means the fingerprint
+          // matched an existing one and nothing was recomputed. Say so, or
+          // landing on a finished result looks like a bug.
+          const reused = run.status === 'completed' ? '?reused=1' : '';
+          navigate(`/backtests/${run._id}${reused}`);
+        }} />
     </>
   );
 }

@@ -43,7 +43,11 @@ Known, and none of them are covered by a test:
   checks that they agree. This is exactly the drift `packages/contracts` exists
   to stop, and the argument for building it just got stronger.
 - **Per-pair capital has never been run through the real UI**, only through the
-  engine's own tests.
+  engine's own tests. The results page now measures it against the deployed
+  total rather than one pair's balance, which was wrong by the pair count.
+- **Docker serves the built web bundle**, so a UI change is invisible until
+  `docker compose -f infra/docker/docker-compose.yml build web && … up -d web`.
+  Same for the gateway. Easy hour to lose.
 - **Verdict thresholds are global**, not per strategy, so `smc_mtf` is judged
   against criteria written for `smc_ob`.
 

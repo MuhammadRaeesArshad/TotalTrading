@@ -53,6 +53,13 @@ Gold is now synced and priced: it was rejected by the gateway's pair filter
 point size — a thousand times too small, which sizes every gold position a
 thousand times too large.
 
+**It needs the account reconnected first.** Instruments are classified when an
+account connects — "the one place symbols enter the system" — so the 6 XAU rows
+already in Mongo still carry the old `instrumentClass: 'other'` and stay hidden
+until a reconnect re-derives it. Press **Connect** on the Accounts page (MT5
+must be running), then import, then it appears in the New backtest picker,
+which lists what is cached rather than what exists.
+
 **Its history still has to be imported**, and `trend_engulf` will mostly skip
 it until its pip-denominated settings are revisited: on gold a "pip" is 0.01,
 so `sl_pips` 5 is a $0.05 stop that the cost floor rejects, and
@@ -76,6 +83,12 @@ Known, and none of them are covered by a test:
   Same for the gateway. Easy hour to lose.
 - **Verdict thresholds are global**, not per strategy, so `smc_mtf` is judged
   against criteria written for `smc_ob`.
+- **The engine guesses point size; the gateway already knows it.** Every
+  instrument row carries the broker's real `pointSize`, `contractSize` and
+  `volumeMin`, but `engine-service/src/instruments.rs` re-derives its own from
+  the symbol name. They agree today, including on gold. They will not agree
+  forever. The honest fix is the gateway sending per-symbol sim values with the
+  run request, and its own module doc has said so since it was written.
 
 ## Open decisions
 

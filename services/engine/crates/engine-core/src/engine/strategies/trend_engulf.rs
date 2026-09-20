@@ -20,7 +20,8 @@ use serde_json::json;
 use crate::engine::detector::{
     params_from, Detector, DetectorFactory, Direction, Signal, SignalSink,
 };
-use crate::engine::rolling::{Atr, Ema, Lag};
+use crate::engine::rolling::Atr;
+use crate::engine::structure::TrendMeter;
 use crate::engine::window::BarCtx;
 use crate::error::Result;
 use crate::timeframe::Timeframe;
@@ -88,15 +89,6 @@ impl Default for TrendEngulfParams {
     }
 }
 
-/// What the EMA slope says about the trend timeframe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Trend {
-    Up,
-    Down,
-    /// Sideways, or not enough history yet. Both mean no trade.
-    None,
-}
-
 /// The original's discriminator: quotes above 10 are the JPY crosses, which
 /// quote to 3 decimals. Crude, and kept because the thresholds it feeds were
 /// tuned against it — a "pip" here has to mean what it meant there.
@@ -115,11 +107,10 @@ pub struct TrendEngulfDetector {
     /// Body filter, on the base timeframe.
     atr: Atr,
 
-    /// Trend timeframe state, stepped only when one of its bars closes.
-    ema: Ema,
-    trend_atr: Atr,
-    ema_then: Lag,
-    trend: Trend,
+    /// Direction, stepped only when a trend-timeframe bar closes. The same
+    /// meter `smc_mtf` reads H4 and H1 with — one implementation, so "uptrend"
+    /// cannot come to mean two things.
+    trend: TrendMeter,
     /// Guards against folding the same trend bar in twice.
     trend_seen: usize,
 }
@@ -129,45 +120,10 @@ impl TrendEngulfDetector {
         TrendEngulfDetector {
             trend_tf: params.trend_timeframe.timeframe(),
             atr: Atr::new(14),
-            ema: Ema::new(params.ema_period),
-            trend_atr: Atr::new(14),
-            ema_then: Lag::new(params.slope_window),
-            trend: Trend::None,
+            trend: TrendMeter::new(params.ema_period, params.slope_window, params.atr_threshold),
             trend_seen: usize::MAX,
             params,
         }
-    }
-
-    /// Folds one closed trend bar in and re-reads the slope.
-    fn step_trend(&mut self, high: f64, low: f64, close: f64) {
-        self.ema.push(close);
-        self.trend_atr.push(high, low, close);
-
-        let Some(now) = self.ema.value() else {
-            self.trend = Trend::None;
-            return;
-        };
-        // Only a settled EMA belongs in the lag buffer; seeding values would
-        // make the first slope a measurement of the seed, not of price.
-        self.ema_then.push(now);
-
-        let (Some(then), Some(atr)) = (self.ema_then.value(), self.trend_atr.value()) else {
-            self.trend = Trend::None;
-            return;
-        };
-        if atr <= 0.0 {
-            self.trend = Trend::None;
-            return;
-        }
-
-        let score = (now - then) / atr;
-        self.trend = if score > self.params.atr_threshold {
-            Trend::Up
-        } else if score < -self.params.atr_threshold {
-            Trend::Down
-        } else {
-            Trend::None
-        };
     }
 
     /// True when the last `consolidation_lookback` bars actually went
@@ -192,7 +148,7 @@ impl Detector for TrendEngulfDetector {
         // The trend timeframe needs ema_period + slope_window of its own bars
         // before it says anything, and each one spans several base bars.
         let per_trend_bar = (self.trend_tf.seconds() / Timeframe::M15.seconds()).max(1) as usize;
-        let trend_bars = self.params.ema_period + self.params.slope_window + 14;
+        let trend_bars = TrendMeter::warmup(self.params.ema_period, self.params.slope_window);
         (trend_bars * per_trend_bar).max(self.params.consolidation_lookback + 2)
     }
 
@@ -205,16 +161,12 @@ impl Detector for TrendEngulfDetector {
             if let Some(h) = ctx.higher(self.trend_tf) {
                 if h.index() != self.trend_seen {
                     self.trend_seen = h.index();
-                    self.step_trend(h.high(), h.low(), h.close());
+                    self.trend.push(h.high(), h.low(), h.close());
                 }
             }
         }
 
-        let direction = match self.trend {
-            Trend::Up => Direction::Long,
-            Trend::Down => Direction::Short,
-            Trend::None => return,
-        };
+        let Some(direction) = self.trend.direction() else { return };
 
         // The previous bar, for the engulfing comparison.
         let opens = ctx.opens(2);
@@ -353,57 +305,6 @@ impl DetectorFactory for TrendEngulfFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn detector() -> TrendEngulfDetector {
-        TrendEngulfDetector::new(TrendEngulfParams::default())
-    }
-
-    #[test]
-    fn a_rising_ema_reads_as_an_uptrend_once_the_slope_clears_the_threshold() {
-        let mut d = detector();
-        // A steady climb: the EMA travels far more than one ATR per 5 bars.
-        for i in 0..60 {
-            let c = 1.1000 + i as f64 * 0.0020;
-            d.step_trend(c + 0.0005, c - 0.0005, c);
-        }
-        assert_eq!(d.trend, Trend::Up);
-    }
-
-    #[test]
-    fn a_falling_ema_reads_as_a_downtrend() {
-        let mut d = detector();
-        for i in 0..60 {
-            let c = 1.3000 - i as f64 * 0.0020;
-            d.step_trend(c + 0.0005, c - 0.0005, c);
-        }
-        assert_eq!(d.trend, Trend::Down);
-    }
-
-    #[test]
-    fn a_flat_market_is_sideways_and_never_directional() {
-        let mut d = detector();
-        // Oscillating within a band: plenty of ATR, no net EMA travel.
-        for i in 0..80 {
-            let c = 1.1000 + if i % 2 == 0 { 0.0010 } else { -0.0010 };
-            d.step_trend(c + 0.0008, c - 0.0008, c);
-        }
-        assert_eq!(d.trend, Trend::None, "a range must not produce a direction");
-    }
-
-    /// The threshold is in ATRs, so the same drift in a volatile market is not
-    /// a trend. This is the whole reason the slope is normalised.
-    #[test]
-    fn the_same_drift_is_not_a_trend_when_volatility_is_high() {
-        let mut quiet = detector();
-        let mut wild = detector();
-        for i in 0..60 {
-            let c = 1.1000 + i as f64 * 0.0002;
-            quiet.step_trend(c + 0.0001, c - 0.0001, c);
-            wild.step_trend(c + 0.0100, c - 0.0100, c);
-        }
-        assert_eq!(quiet.trend, Trend::Up);
-        assert_eq!(wild.trend, Trend::None, "the same drift, swamped by range");
-    }
 
     #[test]
     fn params_reject_a_key_that_is_not_a_setting() {

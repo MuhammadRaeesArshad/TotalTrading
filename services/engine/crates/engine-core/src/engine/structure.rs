@@ -1,5 +1,5 @@
-//! Market-structure primitives: confirmed swing points, and a book of price
-//! zones with a lifecycle.
+//! Market-structure primitives: confirmed swing points, a book of price zones
+//! with a lifecycle, and which way a timeframe is going.
 //!
 //! Neither type knows what strategy is using it. Swings and zones are what
 //! every structure-based rule set is built from, so they live here rather than
@@ -11,6 +11,7 @@
 use std::collections::VecDeque;
 
 use crate::engine::detector::Direction;
+use crate::engine::rolling::{Atr, Ema, Lag};
 
 /// A swing point, anchored to the bar that made it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -441,5 +442,158 @@ mod tests {
         let short = Zone { direction: Direction::Short, ..long };
         assert_eq!(short.near_edge(), 1.1010);
         assert_eq!(short.far_edge(), 1.1030);
+    }
+}
+
+/// Which way a timeframe is going, by how far its EMA has travelled.
+///
+/// The EMA is a smoothed line through price; its slope over a few bars says
+/// whether price is going somewhere. Dividing that slope by ATR is what makes
+/// one threshold work everywhere: a 20-pip drift is a trend on a quiet pair
+/// and noise on a violent one, and the ratio knows the difference where a
+/// fixed pip or percent figure cannot.
+///
+/// Sideways is a real answer, not a weak version of up. `direction()` returns
+/// `None` for it, and a strategy that trades only with a trend then does
+/// nothing — which is the point.
+#[derive(Debug, Clone)]
+pub struct TrendMeter {
+    ema: Ema,
+    atr: Atr,
+    /// The EMA value `slope_window` bars ago, which the slope measures against.
+    then: Lag,
+    threshold: f64,
+    trend: Option<Direction>,
+    ema_period: usize,
+    slope_window: usize,
+}
+
+impl TrendMeter {
+    /// `threshold` is in ATRs: how far the EMA must travel over `slope_window`
+    /// bars before the move counts as directional.
+    pub fn new(ema_period: usize, slope_window: usize, threshold: f64) -> Self {
+        TrendMeter {
+            ema: Ema::new(ema_period),
+            atr: Atr::new(14),
+            then: Lag::new(slope_window),
+            threshold,
+            trend: None,
+            ema_period,
+            slope_window,
+        }
+    }
+
+    /// Feeds one closed bar of the timeframe being measured.
+    pub fn push(&mut self, high: f64, low: f64, close: f64) {
+        self.ema.push(close);
+        self.atr.push(high, low, close);
+
+        let Some(now) = self.ema.value() else {
+            self.trend = None;
+            return;
+        };
+        // Only settled EMA values go in: feeding the seed would make the first
+        // slope a measurement of the seed rather than of price.
+        self.then.push(now);
+
+        let (Some(then), Some(atr)) = (self.then.value(), self.atr.value()) else {
+            self.trend = None;
+            return;
+        };
+        if atr <= 0.0 {
+            self.trend = None;
+            return;
+        }
+
+        let score = (now - then) / atr;
+        self.trend = if score > self.threshold {
+            Some(Direction::Long)
+        } else if score < -self.threshold {
+            Some(Direction::Short)
+        } else {
+            None
+        };
+    }
+
+    /// `None` while warming up, and `None` when the market is going sideways —
+    /// a strategy cannot tell those apart and should not act on either.
+    #[inline]
+    pub fn direction(&self) -> Option<Direction> {
+        self.trend
+    }
+
+    /// Bars of the measured timeframe before it can answer at all.
+    pub fn warmup(ema_period: usize, slope_window: usize) -> usize {
+        ema_period + slope_window + 14
+    }
+
+    /// Sets the reading directly, so a test of what a strategy *does* with a
+    /// direction does not have to manufacture sixty bars to produce one.
+    #[cfg(test)]
+    pub fn force(&mut self, direction: Option<Direction>) {
+        self.trend = direction;
+    }
+
+    pub fn reset(&mut self) {
+        self.ema = Ema::new(self.ema_period);
+        self.atr = Atr::new(14);
+        self.then = Lag::new(self.slope_window);
+        self.trend = None;
+    }
+}
+
+#[cfg(test)]
+mod trend_meter_tests {
+    use super::{Direction, TrendMeter};
+
+    fn meter() -> TrendMeter {
+        TrendMeter::new(21, 5, 0.5)
+    }
+
+    fn feed(m: &mut TrendMeter, bars: usize, step: f64, range: f64) {
+        for i in 0..bars {
+            let c = 1.1000 + i as f64 * step;
+            m.push(c + range, c - range, c);
+        }
+    }
+
+    #[test]
+    fn a_climb_reads_long_and_a_slide_reads_short() {
+        let mut up = meter();
+        feed(&mut up, 60, 0.0020, 0.0005);
+        assert_eq!(up.direction(), Some(Direction::Long));
+
+        let mut down = meter();
+        feed(&mut down, 60, -0.0020, 0.0005);
+        assert_eq!(down.direction(), Some(Direction::Short));
+    }
+
+    #[test]
+    fn a_range_has_no_direction() {
+        let mut m = meter();
+        for i in 0..80 {
+            let c = 1.1000 + if i % 2 == 0 { 0.0010 } else { -0.0010 };
+            m.push(c + 0.0008, c - 0.0008, c);
+        }
+        assert_eq!(m.direction(), None, "a range must not produce a direction");
+    }
+
+    /// The reason the slope is divided by ATR: the same drift is a trend in a
+    /// quiet market and noise in a violent one.
+    #[test]
+    fn the_same_drift_is_not_a_trend_once_volatility_swamps_it() {
+        let mut quiet = meter();
+        let mut wild = meter();
+        feed(&mut quiet, 60, 0.0002, 0.0001);
+        feed(&mut wild, 60, 0.0002, 0.0100);
+        assert_eq!(quiet.direction(), Some(Direction::Long));
+        assert_eq!(wild.direction(), None);
+    }
+
+    #[test]
+    fn nothing_is_claimed_before_there_is_enough_history() {
+        let mut m = meter();
+        feed(&mut m, 20, 0.0020, 0.0005);
+        assert_eq!(m.direction(), None, "21-period EMA cannot have settled yet");
     }
 }

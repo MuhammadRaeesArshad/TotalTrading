@@ -3,7 +3,10 @@
 //! Spec: `docs/specs/2026-09-20-smc-mtf-design.md`.
 //!
 //! 1. **Direction** comes from the higher timeframes. Each of H4 and H1 is
-//!    bullish or bearish by the direction of its last swing break of structure.
+//!    bullish or bearish by how far its EMA has travelled over the last few
+//!    bars, measured in ATRs so one threshold suits every pair. Sideways is a
+//!    third answer and it stops trading, which a break of structure could not
+//!    say — once it had broken one way it stayed that way until it broke back.
 //!    How they combine is configurable (`trend_mode`), because the right
 //!    answer differs by pair.
 //! 2. **Setup** is a break of structure on M15 *or* M30, in that direction:
@@ -26,13 +29,15 @@ use crate::engine::detector::{
     params_from, Detector, DetectorFactory, Direction, Signal, SignalSink,
 };
 use crate::engine::rolling::Atr;
-use crate::engine::structure::{SwingTracker, Zone, ZoneBook};
+use crate::engine::structure::{SwingTracker, TrendMeter, Zone, ZoneBook};
 use crate::engine::window::BarCtx;
 use crate::error::Result;
 use crate::timeframe::Timeframe;
 
 pub const DETECTOR_NAME: &str = "smc_mtf";
-pub const DETECTOR_VERSION: u32 = 1;
+// v2: H4 and H1 direction moved from the last break of structure to the EMA
+// slope, measured in ATRs. Results from v1 are not comparable (rule 6).
+pub const DETECTOR_VERSION: u32 = 2;
 
 /// How the two higher timeframes decide the tradeable direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,8 +56,13 @@ pub enum TrendMode {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MtfParams {
-    /// Swing size on H4 and H1, where structure is coarser.
-    pub trend_swing_lookback: usize,
+    /// The EMA that stands in for the trend line on H4 and H1.
+    pub ema_period: usize,
+    /// How many H4/H1 bars back the EMA slope is measured over.
+    pub slope_window: usize,
+    /// How far the EMA must travel, in ATRs, before H4 or H1 counts as
+    /// directional. Below it in either direction is sideways, and no trade.
+    pub atr_threshold: f64,
     /// Swing size on M15 and M30, where the entries are found.
     pub entry_swing_lookback: usize,
     pub ob_search_bars: usize,
@@ -71,7 +81,9 @@ pub struct MtfParams {
 impl Default for MtfParams {
     fn default() -> Self {
         MtfParams {
-            trend_swing_lookback: 5,
+            ema_period: 21,
+            slope_window: 5,
+            atr_threshold: 0.5,
             entry_swing_lookback: 3,
             ob_search_bars: 20,
             zone_max_age: 80,
@@ -143,8 +155,10 @@ impl Structure {
 
 pub struct MtfDetector {
     params: MtfParams,
-    h4: Structure,
-    h1: Structure,
+    /// Direction, one meter per trend timeframe. Not `Structure`: these read
+    /// the EMA slope, and nothing on H4 or H1 draws a zone.
+    h4: TrendMeter,
+    h1: TrendMeter,
     m30: Structure,
     base: Structure,
     zones: ZoneBook,
@@ -157,8 +171,8 @@ pub struct MtfDetector {
 impl MtfDetector {
     pub fn new(params: MtfParams) -> Self {
         MtfDetector {
-            h4: Structure::new(params.trend_swing_lookback),
-            h1: Structure::new(params.trend_swing_lookback),
+            h4: TrendMeter::new(params.ema_period, params.slope_window, params.atr_threshold),
+            h1: TrendMeter::new(params.ema_period, params.slope_window, params.atr_threshold),
             m30: Structure::new(params.entry_swing_lookback),
             base: Structure::new(params.entry_swing_lookback),
             zones: ZoneBook::new(params.max_live_zones, params.zone_max_age),
@@ -183,7 +197,7 @@ impl MtfDetector {
 
     /// The direction trades may be taken in, from the higher timeframes.
     fn allowed(&self) -> Option<Direction> {
-        let (h4, h1) = (self.h4.trend, self.h1.trend);
+        let (h4, h1) = (self.h4.direction(), self.h1.direction());
         match self.params.trend_mode {
             TrendMode::BothAgree => match (h4, h1) {
                 (Some(a), Some(b)) if a == b => Some(a),
@@ -283,11 +297,11 @@ impl MtfDetector {
         );
         detail.insert(
             "h4_trend".to_string(),
-            self.h4.trend.map(|d| d.sign()).unwrap_or(0.0),
+            self.h4.direction().map(|d| d.sign()).unwrap_or(0.0),
         );
         detail.insert(
             "h1_trend".to_string(),
-            self.h1.trend.map(|d| d.sign()).unwrap_or(0.0),
+            self.h1.direction().map(|d| d.sign()).unwrap_or(0.0),
         );
 
         Some(Signal {
@@ -310,7 +324,7 @@ impl Detector for MtfDetector {
     fn warmup(&self) -> usize {
         // H4 structure needs the most base bars: 16 M15 bars per H4 bar, and a
         // swing needs 2 * lookback + 1 of them before it confirms.
-        let h4_bars = (2 * self.params.trend_swing_lookback + 1) * 16;
+        let h4_bars = TrendMeter::warmup(self.params.ema_period, self.params.slope_window) * 16;
         self.params.warmup.max(h4_bars + self.params.ob_search_bars)
     }
 
@@ -325,8 +339,8 @@ impl Detector for MtfDetector {
                 continue;
             }
             let Some(h) = ctx.higher(tf) else { continue };
-            let structure = if which == 0 { &mut self.h4 } else { &mut self.h1 };
-            structure.push(h.index(), h.high(), h.low(), h.close());
+            let meter = if which == 0 { &mut self.h4 } else { &mut self.h1 };
+            meter.push(h.high(), h.low(), h.close());
         }
 
         self.zones.expire(index);
@@ -436,9 +450,15 @@ impl DetectorFactory for MtfFactory {
               "help": "Set per pair: some trend cleanly on H4, others need both." },
             { "key": "entry_on_m30", "label": "Also break on M30", "kind": "bool", "default": d.entry_on_m30,
               "help": "Off means entries come from M15 breaks alone." },
-            { "key": "trend_swing_lookback", "label": "Swing size, H4 and H1", "kind": "int",
-              "default": d.trend_swing_lookback, "min": 2, "max": 20,
-              "help": "Bars either side of a swing on the trend timeframes." },
+            { "key": "ema_period", "label": "EMA period, H4 and H1", "kind": "int",
+              "default": d.ema_period, "min": 2, "max": 200,
+              "help": "The trend line on H4 and H1 whose slope sets the direction." },
+            { "key": "slope_window", "label": "Slope over", "kind": "int",
+              "default": d.slope_window, "min": 1, "max": 50,
+              "help": "H4/H1 bars between the two EMA readings the slope is taken from." },
+            { "key": "atr_threshold", "label": "Slope threshold, in ATRs", "kind": "float",
+              "default": d.atr_threshold, "min": 0.0, "max": 5.0, "step": 0.1,
+              "help": "Below this in either direction the timeframe counts as sideways, and nothing trades." },
             { "key": "entry_swing_lookback", "label": "Swing size, M15 and M30", "kind": "int",
               "default": d.entry_swing_lookback, "min": 2, "max": 20,
               "help": "Smaller finds more breaks, and more noise." },
@@ -473,36 +493,61 @@ mod tests {
         let mut d = detector(TrendMode::BothAgree);
         assert_eq!(d.allowed(), None, "nothing until structure exists");
 
-        d.h4.trend = Some(Direction::Short);
+        d.h4.force(Some(Direction::Short));
         assert_eq!(d.allowed(), None, "H4 alone is not enough");
 
-        d.h1.trend = Some(Direction::Long);
+        d.h1.force(Some(Direction::Long));
         assert_eq!(d.allowed(), None, "disagreement means no side");
 
-        d.h1.trend = Some(Direction::Short);
+        d.h1.force(Some(Direction::Short));
         assert_eq!(d.allowed(), Some(Direction::Short));
+    }
+
+    /// What v2 can say and v1 could not. A break of structure, once it had
+    /// broken, held its direction until price broke back the other way — so a
+    /// range kept whichever side happened to break last, and the strategy went
+    /// on taking setups inside it. An EMA that has not travelled says nothing.
+    #[test]
+    fn a_range_on_the_trend_timeframes_withdraws_the_direction() {
+        let mut d = detector(TrendMode::BothAgree);
+
+        // A real climb first: both timeframes agree on long.
+        for i in 0..60 {
+            let c = 1.1000 + i as f64 * 0.0020;
+            d.h4.push(c + 0.0005, c - 0.0005, c);
+            d.h1.push(c + 0.0005, c - 0.0005, c);
+        }
+        assert_eq!(d.allowed(), Some(Direction::Long), "a climb is a direction");
+
+        // Then it stops going anywhere, while still moving about.
+        for i in 0..80 {
+            let c = 1.2200 + if i % 2 == 0 { 0.0015 } else { -0.0015 };
+            d.h4.push(c + 0.0010, c - 0.0010, c);
+            d.h1.push(c + 0.0010, c - 0.0010, c);
+        }
+        assert_eq!(d.allowed(), None, "a range is not a weak uptrend");
     }
 
     #[test]
     fn single_timeframe_modes_ignore_the_other() {
         let mut d = detector(TrendMode::H4Only);
-        d.h4.trend = Some(Direction::Long);
-        d.h1.trend = Some(Direction::Short);
+        d.h4.force(Some(Direction::Long));
+        d.h1.force(Some(Direction::Short));
         assert_eq!(d.allowed(), Some(Direction::Long));
 
         let mut d = detector(TrendMode::H1Only);
-        d.h4.trend = Some(Direction::Long);
-        d.h1.trend = Some(Direction::Short);
+        d.h4.force(Some(Direction::Long));
+        d.h1.force(Some(Direction::Short));
         assert_eq!(d.allowed(), Some(Direction::Short));
     }
 
     #[test]
     fn either_takes_whichever_has_spoken_but_never_a_conflict() {
         let mut d = detector(TrendMode::Either);
-        d.h4.trend = Some(Direction::Long);
+        d.h4.force(Some(Direction::Long));
         assert_eq!(d.allowed(), Some(Direction::Long), "H1 silent, H4 decides");
 
-        d.h1.trend = Some(Direction::Short);
+        d.h1.force(Some(Direction::Short));
         assert_eq!(d.allowed(), None, "a conflict is still no trade");
     }
 

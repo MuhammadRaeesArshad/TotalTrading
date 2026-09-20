@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../lib/api';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
-import type { CachedSeries, CapitalMode, IntrabarPolicy, ParamSpec, Run, Strategy, Sweep } from '../types';
+import type { CachedSeries, CapitalMode, IntrabarPolicy, ParamSpec, Run, SizingMode, Strategy, Sweep } from '../types';
 import { sweepSize } from '../sweep';
 import { PairPicker } from './PairPicker';
 import { DateRange } from './DateRange';
@@ -36,6 +36,7 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
   const [maxOpen, setMaxOpen] = useState(3);
   const [intrabar, setIntrabar] = useState<IntrabarPolicy>('pessimistic');
   const [capital, setCapital] = useState<CapitalMode>('per_symbol');
+  const [sizing, setSizing] = useState<SizingMode>('fixed');
   const [busy, setBusy] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
         higherTimeframes: strategy?.higher_timeframes ?? [],
         fromTs: fromDay(from),
         toTs: fromDay(to) + 86_399,
-        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital },
+        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital, sizing },
         params,
       });
       onStarted(run);
@@ -120,7 +121,7 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
         higherTimeframes: strategy?.higher_timeframes ?? [],
         fromTs: fromDay(from),
         toTs: fromDay(to) + 86_399,
-        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital },
+        sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar, capital, sizing },
         params,
       });
       onSwept(sweep);
@@ -196,7 +197,7 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
             </div>
             <div className="f2">
               {strategy.params.map((p) => (
-                <ParamField key={p.key} spec={p} value={params[p.key]}
+                <ParamField key={p.key} spec={p} value={params[p.key]} pairs={symbols}
                   onChange={(v) => setParams((cur) => ({ ...cur, [p.key]: v }))} />
               ))}
             </div>
@@ -214,6 +215,19 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
             <input id="nr-open" type="number" min={1} max={10} step={1} value={maxOpen} onChange={(e) => setMaxOpen(Number(e.target.value))} />
             <span className="hint">At {risk}% each, up to {(risk * maxOpen).toFixed(1)}% exposed on one pair.</span>
           </div>
+        </div>
+
+        <div className="f">
+          <label htmlFor="nr-size">Risk is a percent of</label>
+          <select id="nr-size" value={sizing} onChange={(e) => setSizing(e.target.value as SizingMode)}>
+            <option value="fixed">The starting balance — every signal gets tested</option>
+            <option value="compound">Equity as it stands — the account can be wiped out</option>
+          </select>
+          <span className="hint">
+            {sizing === 'fixed'
+              ? 'The account cannot run out, so a losing stretch never silently stops the run answering. Money is linear in R here, so read the R figures.'
+              : 'What a real account does. Once the balance reaches zero every later signal is skipped for being under the minimum lot while the metrics keep reporting — a bad result may be measuring how fast it died.'}
+          </span>
         </div>
 
         <div className="f">
@@ -262,8 +276,53 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
 }
 
 /** One setting, rendered from its declared kind. */
-function ParamField({ spec, value, onChange }: { spec: ParamSpec; value: unknown; onChange: (v: unknown) => void }) {
+function ParamField({ spec, value, pairs, onChange }: {
+  spec: ParamSpec;
+  value: unknown;
+  /** The pairs this run covers, for a per-pair setting. */
+  pairs: string[];
+  onChange: (v: unknown) => void;
+}) {
   const id = `param-${spec.key}`;
+
+  // A setting that can differ per pair: one row per pair, blank meaning "use
+  // the run's value". Only pairs actually named are sent, so the map stays
+  // small and a pair dropped from the run leaves nothing behind.
+  if (spec.kind === 'pair_choice') {
+    const map = (value ?? {}) as Record<string, string>;
+    const set = (pair: string, v: string) => {
+      const next = { ...map };
+      if (v) next[pair] = v;
+      else delete next[pair];
+      onChange(next);
+    };
+    const named = Object.keys(map).length;
+    return (
+      <div className="f" style={{ gridColumn: '1 / -1' }}>
+        <div className="spread">
+          <label style={{ margin: 0 }}>{spec.label}</label>
+          <span className="hint" style={{ margin: 0 }}>
+            {named === 0 ? 'every pair uses the setting above' : `${named} set individually`}
+          </span>
+        </div>
+        {spec.help && <span className="hint">{spec.help}</span>}
+        <div className="perpair">
+          {pairs.map((pair) => (
+            <label key={pair} className="perpair-row">
+              <span className="mono-sm">{pair}</span>
+              <select value={map[pair] ?? ''} onChange={(e) => set(pair, e.target.value)}>
+                <option value="">Use the setting above</option>
+                {(spec.options ?? []).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+          {pairs.length === 0 && <span className="hint">Pick some pairs first.</span>}
+        </div>
+      </div>
+    );
+  }
   if (spec.kind === 'bool') {
     return (
       <div className="f">

@@ -46,6 +46,11 @@ export class SimOverridesDto {
   @IsOptional() @IsIn(['shared', 'per_symbol'])
   capital?: 'shared' | 'per_symbol';
 
+  /** `fixed` risks a percent of the starting balance, so a run cannot stop
+   *  answering; `compound` risks a percent of equity and can be wiped out. */
+  @IsOptional() @IsIn(['fixed', 'compound'])
+  sizing?: 'fixed' | 'compound';
+
   @IsOptional() @IsNumber() @Min(0)
   commissionPerLot?: number;
 

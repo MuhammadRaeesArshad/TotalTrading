@@ -548,15 +548,20 @@ fn run_scripted(bars: Arc<Bars>, factory: &ScriptedFactory, sim: SimConfig) -> e
     run(vec![ScanTask { bars, higher: vec![], sim }], &request, factory, &Progress::default()).unwrap()
 }
 
-/// Risk is 1% of *current* equity. The engine used to size every trade off the
-/// starting balance, so a losing run kept betting full size and equity went
-/// deeply negative.
+/// Under `Compound`, risk is 1% of *current* equity. The engine used to size
+/// every trade off the starting balance, so a losing run kept betting full
+/// size and equity went deeply negative.
+///
+/// Compound has to be asked for now — the default is `Fixed`, which sizes off
+/// the starting balance deliberately so a run cannot stop answering.
 #[test]
 fn position_size_compounds_on_realised_equity() {
+    use engine_core::SizingMode;
     // Bar 6 dips through the first trade's stop; the second trade opens later.
     let bars = flat_with("compound", 30, &[(6, (1.1000, 1.1002, 1.0985, 1.1000))]);
     let factory = ScriptedFactory { at: vec![5, 20], stop_distance: 0.0010 };
-    let result = run_scripted(bars, &factory, config());
+    let sim = SimConfig { sizing: SizingMode::Compound, ..config() };
+    let result = run_scripted(bars, &factory, sim);
 
     assert_eq!(result.trades.len(), 2);
     let (first, second) = (&result.trades[0], &result.trades[1]);
@@ -621,7 +626,9 @@ fn per_symbol_capital_keeps_one_pairs_loss_off_another_pairs_sizing() {
     let factory = ScriptedFactory { at: vec![5, 20], stop_distance: 0.0010 };
 
     let volume_of_second_gbp = |capital: CapitalMode| {
-        let sim = config();
+        // Only compounding can carry one pair's loss into another's sizing;
+        // under Fixed there is nothing to carry.
+        let sim = SimConfig { sizing: engine_core::SizingMode::Compound, ..config() };
         let times = losing.time().to_vec();
         let request = RunRequest {
             params: serde_json::Value::Null,
@@ -806,4 +813,50 @@ fn trend_engulfing_stays_silent_when_the_higher_timeframe_is_going_nowhere() {
     let result = run(tasks, &request, &TrendEngulfFactory, &Progress::default()).unwrap();
 
     assert_eq!(result.signals_generated, 0, "no direction means no trade");
+}
+
+/// The whole point of `Fixed`: a losing stretch that would bankrupt a
+/// compounding account does not stop the run answering.
+///
+/// Under `Compound` the balance falls until a position rounds below the
+/// broker's minimum, and every later signal is skipped while the metrics go on
+/// reporting as though it traded. A sweep of that measures how fast a setting
+/// killed the account, not what the setting does.
+#[test]
+fn fixed_sizing_keeps_testing_signals_after_a_compounding_account_would_be_gone() {
+    use engine_core::SizingMode;
+
+    // Every trade loses: bar 6 of each pair of bars dips through the stop.
+    let overrides: Vec<(usize, (f64, f64, f64, f64))> = (0..40)
+        .map(|k| (6 + k * 6, (1.1000, 1.1002, 1.0900, 1.1000)))
+        .collect();
+    let bars = flat_with("ruin", 260, &overrides);
+    let at: Vec<usize> = (0..40).map(|k| 5 + k * 6).collect();
+    let factory = ScriptedFactory { at, stop_distance: 0.0010 };
+
+    // 50% a trade: a compounding account is gone within a handful of losses.
+    let mut sim = config();
+    sim.risk_percent = 50.0;
+
+    let compound = run_scripted(
+        Arc::clone(&bars),
+        &factory,
+        SimConfig { sizing: SizingMode::Compound, ..sim.clone() },
+    );
+    let fixed = run_scripted(bars, &factory, SimConfig { sizing: SizingMode::Fixed, ..sim });
+
+    assert!(
+        compound.skipped.below_min_volume > 0,
+        "a compounding account should have run out and started skipping",
+    );
+    assert_eq!(
+        fixed.skipped.below_min_volume, 0,
+        "fixed sizing never runs out, so nothing is skipped for lack of funds",
+    );
+    assert!(
+        fixed.trades.len() > compound.trades.len(),
+        "fixed tested {} signals, compound only {}",
+        fixed.trades.len(),
+        compound.trades.len(),
+    );
 }

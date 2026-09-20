@@ -95,18 +95,22 @@ Known, and none of them are covered by a test:
   forever. The honest fix is the gateway sending per-symbol sim values with the
   run request, and its own module doc has said so since it was written.
 
+## Settled, 20 Sep
+
+- **The account no longer runs out.** `sizing` defaults to `fixed`: risk is a
+  percent of the *starting* balance, so a losing stretch cannot wipe the
+  account out and silently stop the run answering. `compound` is still there
+  for asking whether a size is survivable. Engine crate went to 0.2.0, which
+  the fingerprint requires (see rule 6).
+- **`trend_engulf`'s stop stays 5 pips** — the code, not the docstring. The
+  user's call: follow the code.
+- **`trend_mode` can be set per pair** for `smc_mtf` (v3). Pairs left alone use
+  the run's setting.
+- **The old backtests were deleted** by the user.
+
 ## Open decisions
 
-- **Stop a run when the account is blown?** (Per-pair capital narrows this but
-  does not answer it — a single pair can still blow its own book.) At high risk settings the balance
-  hits zero early and every later signal is skipped for being below the minimum
-  lot, while the metrics still read as though it traded on. Proposed: stop the
-  run, mark it "account blown" with the date. Not built — it changes what a
-  stored backtest means, so it needs the user's yes.
-- **`trend_mode` per pair**, rather than per run, for `smc_mtf`.
-- **`trend_engulf`'s stop: 5 pips or 1.5 ATR?** The Python original's docstring
-  says one and its code does the other. The code is ported, since the code is
-  what ran — but which produced the results worth keeping is the user's call.
+None outstanding.
 
 ## Running it
 

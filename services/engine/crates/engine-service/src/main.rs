@@ -32,7 +32,7 @@ use engine_core::engine::runner::{run, CapitalMode, RunRequest, ScanTask};
 use engine_core::engine::strategies::smc::SmcFactory;
 use engine_core::engine::strategies::smc_mtf::MtfFactory;
 use engine_core::engine::strategies::trend_engulf::TrendEngulfFactory;
-use engine_core::engine::sim::IntrabarPolicy;
+use engine_core::engine::sim::{IntrabarPolicy, SizingMode};
 use engine_core::store::{cache_path, Bars};
 use engine_core::{CoreError, SimConfig, Timeframe, ENGINE_VERSION};
 use serde::{Deserialize, Serialize};
@@ -544,6 +544,17 @@ fn apply_overrides(mut sim: SimConfig, spec: &RunSpec) -> Result<SimConfig, ApiE
     }
     if let Some(v) = o.max_open_per_symbol {
         sim.max_open_per_symbol = v.max(1);
+    }
+    if let Some(raw) = o.sizing.as_deref() {
+        sim.sizing = match raw.to_ascii_lowercase().as_str() {
+            "fixed" => SizingMode::Fixed,
+            "compound" => SizingMode::Compound,
+            other => {
+                return Err(ApiError::bad_request(format!(
+                    "`sizing` must be \"fixed\" or \"compound\", got \"{other}\"."
+                )))
+            }
+        };
     }
     if let Some(raw) = o.intrabar.as_deref() {
         sim.intrabar = match raw.to_ascii_lowercase().as_str() {

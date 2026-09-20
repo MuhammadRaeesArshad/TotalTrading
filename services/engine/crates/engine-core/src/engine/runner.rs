@@ -25,7 +25,7 @@ use crate::engine::align::Alignment;
 use crate::engine::detector::{DetectorFactory, Direction, Signal, SignalSink};
 use crate::engine::metrics::{EquityPoint, Metrics, MetricsAccumulator};
 use crate::engine::sim::{
-    close_position, resolve_exit, BarSlice, OpenPosition, SimConfig, Trade,
+    close_position, resolve_exit, BarSlice, OpenPosition, SimConfig, SizingMode, Trade,
 };
 use crate::engine::window::{BarCtx, HigherTimeframe};
 use crate::error::{CoreError, Result};
@@ -403,7 +403,13 @@ fn simulate(
             }
         }
 
-        let Some(volume) = config.position_size(books[book_of[task_index]], risk_distance) else {
+        // What the risk is a percent of. Under `Fixed` the account cannot run
+        // out, so a losing stretch does not silently stop the run answering.
+        let sizing_equity = match config.sizing {
+            SizingMode::Fixed => config.initial_balance,
+            SizingMode::Compound => books[book_of[task_index]],
+        };
+        let Some(volume) = config.position_size(sizing_equity, risk_distance) else {
             skipped.below_min_volume += 1;
             continue;
         };

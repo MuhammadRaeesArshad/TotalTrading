@@ -36,6 +36,8 @@ export interface CellSpec {
 export interface SimInputs {
   initialBalance: number;
   riskPercent: number;
+  /** What the risk is a percent of: the starting balance, or current equity. */
+  sizing: string;
   maxOpenPerSymbol: number;
   intrabar: string;
   capital: string;
@@ -48,6 +50,7 @@ export interface SimInputs {
 export const SIM_DEFAULTS: SimInputs = {
   initialBalance: 10_000,
   riskPercent: 1,
+  sizing: 'fixed',
   maxOpenPerSymbol: 3,
   intrabar: 'pessimistic',
   capital: 'shared',

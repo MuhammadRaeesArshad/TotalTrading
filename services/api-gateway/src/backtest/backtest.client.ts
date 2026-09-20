@@ -70,6 +70,7 @@ export interface EngineRunSpec {
     max_open_per_symbol?: number;
     intrabar?: 'pessimistic' | 'optimistic';
     capital?: 'shared' | 'per_symbol';
+    sizing?: 'fixed' | 'compound';
   };
 }
 

@@ -8,6 +8,7 @@ export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancell
 export type IntrabarPolicy = 'pessimistic' | 'optimistic';
 
 export type CapitalMode = 'shared' | 'per_symbol';
+export type SizingMode = 'fixed' | 'compound';
 export type Direction = 'long' | 'short';
 export type ExitReason = 'stop_loss' | 'take_profit' | 'end_of_data';
 
@@ -58,6 +59,8 @@ export interface Run {
   riskPercentPerTrade: number;
   /** `shared`: one account for every pair. `per_symbol`: that balance each. */
   capital?: CapitalMode;
+  /** What the risk was a percent of. Absent on runs stored before the choice. */
+  sizing?: SizingMode;
   /** Put aside rather than deleted. Absent on runs stored before archiving. */
   archived?: boolean;
   intrabarPolicy: IntrabarPolicy;
@@ -155,7 +158,8 @@ export interface ImportJob {
 export interface ParamSpec {
   key: string;
   label: string;
-  kind: 'int' | 'float' | 'bool' | 'choice';
+  /** `pair_choice` is a per-pair override map, not a single value. */
+  kind: 'int' | 'float' | 'bool' | 'choice' | 'pair_choice';
   default: unknown;
   min?: number;
   max?: number;
@@ -188,6 +192,7 @@ export interface StartRunInput {
     intrabar?: IntrabarPolicy;
     initialBalance?: number;
     capital?: CapitalMode;
+    sizing?: SizingMode;
   };
   /** The strategy's own settings. The engine validates them. */
   params?: Record<string, unknown>;

@@ -110,6 +110,12 @@ export class Backtest {
   @Prop({ type: String, enum: ['shared', 'per_symbol'], default: 'shared' })
   capital: 'shared' | 'per_symbol';
 
+  /** What the risk was a percent of. `fixed` is the default: the account
+   *  cannot run out, so every signal is tested rather than skipped once a
+   *  compounding balance reaches zero. */
+  @Prop({ type: String, enum: ['fixed', 'compound'], default: 'fixed' })
+  sizing: 'fixed' | 'compound';
+
   @Prop({ type: String, enum: BacktestStatus, default: BacktestStatus.QUEUED, index: true })
   status: BacktestStatus;
 

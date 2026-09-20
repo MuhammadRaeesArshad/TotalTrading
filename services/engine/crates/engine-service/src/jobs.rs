@@ -64,6 +64,10 @@ pub struct SimOverrides {
     /// "shared" (default) — one balance for the whole run — or "per_symbol",
     /// which gives every pair its own copy of `initial_balance`.
     pub capital: Option<String>,
+    /// "fixed" (default) — risk a percent of the starting balance every trade,
+    /// so the account cannot run out — or "compound", which risks a percent of
+    /// equity as it stands and can be wiped out.
+    pub sizing: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

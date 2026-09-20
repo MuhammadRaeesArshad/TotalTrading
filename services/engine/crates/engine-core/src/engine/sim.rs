@@ -30,8 +30,10 @@ pub enum IntrabarPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimConfig {
     pub initial_balance: f64,
-    /// Percent of current equity risked per trade, sized off the stop distance.
+    /// Percent risked per trade, sized off the stop distance. What it is a
+    /// percent *of* is `sizing`.
     pub risk_percent: f64,
+    pub sizing: SizingMode,
     /// Round-turn commission per lot, in account currency.
     pub commission_per_lot: f64,
     /// Extra spread in points beyond what the bar recorded. Broker spread
@@ -60,6 +62,7 @@ impl Default for SimConfig {
         SimConfig {
             initial_balance: 10_000.0,
             risk_percent: 1.0,
+            sizing: SizingMode::Fixed,
             commission_per_lot: 7.0,
             extra_spread_points: 0.0,
             slippage_points: 0.0,
@@ -75,6 +78,28 @@ impl Default for SimConfig {
             min_risk_cost_multiple: 2.0,
         }
     }
+}
+
+/// What `risk_percent` is a percent of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SizingMode {
+    /// The starting balance, every trade, for the whole run. The account
+    /// cannot run out, so every signal the detector finds is actually tested.
+    ///
+    /// This is the default because the alternative silently stops answering:
+    /// once a compounding account reaches zero, every later position rounds
+    /// below the broker's minimum and is skipped, while the metrics go on
+    /// reporting as though the run continued. A sweep then measures how fast
+    /// each setting killed the account rather than what the setting does.
+    ///
+    /// Money is linear in R here, so R is the figure to read.
+    #[default]
+    Fixed,
+    /// Equity as it stands: profits compound, a loss shrinks the next
+    /// position, and the account can be wiped out. What a real account does,
+    /// and the right choice for asking whether a size is survivable.
+    Compound,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,9 +207,11 @@ pub struct BarSlice {
 }
 
 impl SimConfig {
-    /// Lot size that puts `risk_percent` of equity at the stop, rounded down to
-    /// the broker's volume step. Rounding *down* matters: rounding up quietly
-    /// exceeds the risk limit on every trade.
+    /// Lot size that puts `risk_percent` of `equity` at the stop, rounded down
+    /// to the broker's volume step. Rounding *down* matters: rounding up
+    /// quietly exceeds the risk limit on every trade.
+    ///
+    /// `equity` is whatever `sizing` says it is; this does not decide.
     pub fn position_size(&self, equity: f64, risk_distance: f64) -> Option<f64> {
         if risk_distance <= 0.0 || !risk_distance.is_finite() || equity <= 0.0 {
             return None;

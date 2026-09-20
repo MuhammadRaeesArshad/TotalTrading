@@ -444,3 +444,11 @@ tr.picked .row-actions{opacity:1;}
 @media (max-width:640px){
   .filterbar-count{margin-left:0;width:100%;}
 }
+
+/* A setting that can differ per pair. Scrolls rather than growing the dialog
+   past the screen — 29 pairs is a long list and the settings below it matter. */
+.perpair{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:6px;max-height:240px;overflow-y:auto;padding:8px;border:1px solid var(--line);
+  border-radius:6px;background:var(--surface-2);}
+.perpair-row{display:grid;grid-template-columns:76px 1fr;gap:8px;align-items:center;}
+.perpair-row select{font-size:11.5px;padding:4px 6px;}

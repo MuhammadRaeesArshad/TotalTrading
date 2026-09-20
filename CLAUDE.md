@@ -106,7 +106,7 @@ in Docker, and the algorithm — in that order.
 | MongoDB | — | Docker | Persistent history | 27017 |
 
 Mongo collections, all written by the gateway: `users`, `mt5_accounts`, `instruments`,
-`strategy_configs`, `zones_history`, `signals_log`, `backtests`, `trades_journal`,
+`strategy_configs`, `zones_history`, `signals_log`, `backtests`, `trades`,
 `ai_analysis`, `system_logs`.
 
 ## Layout

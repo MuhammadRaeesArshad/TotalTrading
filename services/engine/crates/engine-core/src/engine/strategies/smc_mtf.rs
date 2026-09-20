@@ -37,7 +37,10 @@ use crate::timeframe::Timeframe;
 pub const DETECTOR_NAME: &str = "smc_mtf";
 // v2: H4 and H1 direction moved from the last break of structure to the EMA
 // slope, measured in ATRs. Results from v1 are not comparable (rule 6).
-pub const DETECTOR_VERSION: u32 = 2;
+// v3: `trend_mode` can be set per pair. A run that names none behaves
+// exactly as v2 did, but the version moves because the rules gained a way to
+// mean something different on one pair than another (rule 6).
+pub const DETECTOR_VERSION: u32 = 3;
 
 /// How the two higher timeframes decide the tradeable direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,9 +56,15 @@ pub enum TrendMode {
     Either,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MtfParams {
+    /// Overrides `trend_mode` for the pairs named. Some pairs trend cleanly on
+    /// H4 while others need both timeframes to agree, and forcing one answer
+    /// across a whole basket is what made a 28-pair run say less than the
+    /// pairs in it did separately.
+    #[serde(default)]
+    pub trend_mode_by_pair: std::collections::HashMap<String, TrendMode>,
     /// The EMA that stands in for the trend line on H4 and H1.
     pub ema_period: usize,
     /// How many H4/H1 bars back the EMA slope is measured over.
@@ -81,6 +90,7 @@ pub struct MtfParams {
 impl Default for MtfParams {
     fn default() -> Self {
         MtfParams {
+            trend_mode_by_pair: HashMap::new(),
             ema_period: 21,
             slope_window: 5,
             atr_threshold: 0.5,
@@ -165,6 +175,9 @@ pub struct MtfDetector {
     atr: Atr,
     /// Index of the last M30 bar folded in, so each closed M30 bar counts once.
     m30_seen: usize,
+    /// The pair being scanned. A detector runs over exactly one, and it is
+    /// what `trend_mode_by_pair` is keyed on.
+    symbol: String,
     skipped_sliced: usize,
 }
 
@@ -173,6 +186,7 @@ impl MtfDetector {
         MtfDetector {
             h4: TrendMeter::new(params.ema_period, params.slope_window, params.atr_threshold),
             h1: TrendMeter::new(params.ema_period, params.slope_window, params.atr_threshold),
+            symbol: String::new(),
             m30: Structure::new(params.entry_swing_lookback),
             base: Structure::new(params.entry_swing_lookback),
             zones: ZoneBook::new(params.max_live_zones, params.zone_max_age),
@@ -196,9 +210,19 @@ impl MtfDetector {
     }
 
     /// The direction trades may be taken in, from the higher timeframes.
+    /// The mode for the pair being scanned: its own if one was named for it,
+    /// otherwise the run's.
+    fn mode(&self) -> TrendMode {
+        self.params
+            .trend_mode_by_pair
+            .get(&self.symbol)
+            .copied()
+            .unwrap_or(self.params.trend_mode)
+    }
+
     fn allowed(&self) -> Option<Direction> {
         let (h4, h1) = (self.h4.direction(), self.h1.direction());
-        match self.params.trend_mode {
+        match self.mode() {
             TrendMode::BothAgree => match (h4, h1) {
                 (Some(a), Some(b)) if a == b => Some(a),
                 _ => None,
@@ -329,6 +353,9 @@ impl Detector for MtfDetector {
     }
 
     fn on_bar(&mut self, ctx: &BarCtx<'_>, out: &mut SignalSink) {
+        if self.symbol.is_empty() {
+            self.symbol.push_str(ctx.symbol());
+        }
         let index = ctx.index();
         let (high, low, close) = (ctx.high(), ctx.low(), ctx.close());
         self.atr.push(high, low, close);
@@ -440,6 +467,15 @@ impl DetectorFactory for MtfFactory {
     fn params_schema(&self) -> serde_json::Value {
         let d = MtfParams::default();
         json!([
+            { "key": "trend_mode_by_pair", "label": "Direction, per pair", "kind": "pair_choice",
+              "default": {},
+              "options": [
+                { "value": "both_agree", "label": "H4 and H1 must agree" },
+                { "value": "h4_only", "label": "H4 only" },
+                { "value": "h1_only", "label": "H1 only" },
+                { "value": "either", "label": "Either, unless they conflict" }
+              ],
+              "help": "Overrides the setting above for the pairs you name. Anything left alone uses it." },
             { "key": "trend_mode", "label": "Direction from", "kind": "choice", "default": "both_agree",
               "options": [
                 { "value": "both_agree", "label": "H4 and H1 must agree" },
@@ -474,7 +510,7 @@ impl DetectorFactory for MtfFactory {
     }
 
     fn build(&self, params: &serde_json::Value) -> Result<Box<dyn Detector>> {
-        let p = if params.is_null() { self.params } else { params_from::<MtfParams>(params)? };
+        let p = if params.is_null() { self.params.clone() } else { params_from::<MtfParams>(params)? };
         Ok(Box::new(MtfDetector::new(p)))
     }
 }
@@ -576,5 +612,46 @@ mod tests {
 
         assert!(params_from::<MtfParams>(&json!({ "targt_r": 3.0 })).is_err(), "a typo must not run different rules");
         assert!(params_from::<MtfParams>(&json!({ "trend_mode": "sideways" })).is_err());
+    }
+}
+
+#[cfg(test)]
+mod per_pair_tests {
+    use super::*;
+
+    /// The user's own request: some pairs trend cleanly on H4 while others need
+    /// both timeframes, and one answer across a basket suits neither.
+    #[test]
+    fn a_named_pair_uses_its_own_mode_and_the_rest_use_the_runs() {
+        let mut by_pair = HashMap::new();
+        by_pair.insert("AUDNZD".to_string(), TrendMode::H4Only);
+
+        let params = MtfParams {
+            trend_mode: TrendMode::BothAgree,
+            trend_mode_by_pair: by_pair,
+            ..MtfParams::default()
+        };
+
+        let mut named = MtfDetector::new(params.clone());
+        named.symbol.push_str("AUDNZD");
+        named.h4.force(Some(Direction::Long));
+        // H1 disagrees, which `both_agree` would refuse and `h4_only` ignores.
+        named.h1.force(Some(Direction::Short));
+        assert_eq!(named.allowed(), Some(Direction::Long), "its own mode applies");
+
+        let mut other = MtfDetector::new(params);
+        other.symbol.push_str("EURUSD");
+        other.h4.force(Some(Direction::Long));
+        other.h1.force(Some(Direction::Short));
+        assert_eq!(other.allowed(), None, "an unnamed pair keeps the run's mode");
+    }
+
+    #[test]
+    fn naming_no_pair_behaves_exactly_as_before() {
+        let params = MtfParams { trend_mode: TrendMode::H1Only, ..MtfParams::default() };
+        let mut d = MtfDetector::new(params);
+        d.symbol.push_str("GBPUSD");
+        d.h1.force(Some(Direction::Short));
+        assert_eq!(d.allowed(), Some(Direction::Short));
     }
 }

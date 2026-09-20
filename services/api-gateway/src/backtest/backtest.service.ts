@@ -120,6 +120,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       riskPercentPerTrade: sim.riskPercent ?? 1,
       intrabarPolicy: sim.intrabar ?? 'pessimistic',
       capital: sim.capital ?? 'shared',
+      sizing: sim.sizing ?? 'fixed',
       fingerprint: key,
       status: BacktestStatus.QUEUED,
     });
@@ -140,6 +141,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
           max_open_per_symbol: sim.maxOpenPerSymbol,
           intrabar: sim.intrabar,
           capital: sim.capital,
+          sizing: sim.sizing,
           commission_per_lot: sim.commissionPerLot,
           extra_spread_points: sim.extraSpreadPoints,
           slippage_points: sim.slippagePoints,

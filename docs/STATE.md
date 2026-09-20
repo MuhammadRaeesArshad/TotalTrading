@@ -18,9 +18,15 @@ a stale handoff is worse than none.
   (what a live account is, and the default) or gives each pair its own copy of
   it. Per-pair isolates a pair's edge from what the others were doing, which
   is what made a 28-pair run and a solo run of the same pair disagree.
-- **Three strategies.** `smc_ob`, `smc_mtf`, and `trend_engulf` — the last
-  ported from the user's earlier `finance-trader-backend` (D:aees), where
-  the EMA-slope trend detector and the engulfing entry had already proved out.
+- **Three strategies.** `smc_ob`, `smc_mtf` (**v2**), and `trend_engulf` — the
+  last ported from the user's earlier `finance-trader-backend` (the local copy
+  is at D:\raees), where the EMA-slope trend detector and the engulfing
+  entry had already proved out. Both multi-timeframe strategies now read
+  direction from the same `TrendMeter` in `structure.rs` — one implementation
+  of what "uptrend" means, not two.
+- **`smc_mtf` v1 results are dead.** v2 changed how H4 and H1 decide
+  direction, from the last break of structure to the EMA slope. Stored runs
+  keep the version that produced them; do not compare across them (rule 6).
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and

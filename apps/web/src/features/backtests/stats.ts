@@ -72,6 +72,20 @@ export interface Summary {
  * `startEquity`, which should be the equity just before the subset's first
  * trade — the run's initial balance for the whole run.
  */
+/**
+ * What the portfolio actually started with.
+ *
+ * Under `per_symbol` each pair gets its own copy of `initialBalance`, so a
+ * 28-pair run deployed 28 times it. Every percentage this file recomputes —
+ * return, drawdown — has to be measured against that, or the tabs disagree
+ * with the engine's own metrics by a factor of the pair count.
+ */
+export function deployedCapital(run: Run): number {
+  return run.capital === 'per_symbol'
+    ? run.initialBalance * Math.max(1, run.symbols.length)
+    : run.initialBalance;
+}
+
 export function summarize(trades: Trade[], startEquity: number): Summary {
   const list = [...trades].sort(byExit);
   let wins = 0, grossProfit = 0, grossLoss = 0, sumR = 0, winR = 0, lossR = 0;
@@ -185,7 +199,7 @@ const sgnR = (v: number, dp = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixe
 export function verdict(run: Run, trades: Trade[], optimistic: Run | null = null): Criterion[] {
   const c = DEFAULT_CRITERIA;
   const m = run.metrics;
-  const s = summarize(trades, run.initialBalance);
+  const s = summarize(trades, deployedCapital(run));
   const n = m?.totalTrades ?? s.n;
   const pf = m ? m.profitFactor : s.profitFactor;
   const expR = m?.expectancyR ?? s.expR;

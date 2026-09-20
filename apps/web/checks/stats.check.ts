@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import {
-  equityPath, groupBy, rHistogram, R_BINS, sessionOf, summarize, verdict,
+  deployedCapital, equityPath, groupBy, rHistogram, R_BINS, sessionOf, summarize, verdict,
 } from '../src/features/backtests/stats.ts';
 import type { Run, Trade } from '../src/features/backtests/types.ts';
 
@@ -86,3 +86,14 @@ const optimistic = { metrics: { profitFactor: 1.1 } } as unknown as Run;
 assert.equal(verdict(run, trades, optimistic).find((c) => c.id === 'intrabar')?.status, 'pass');
 
 console.log('stats.check: all assertions passed');
+
+// --- capital deployed ------------------------------------------------------
+// Per-pair runs give each pair its own balance, so every percentage the page
+// recomputes has to be measured against the total, not against one pair's.
+{
+  const base = { initialBalance: 10_000, symbols: ['EURUSD', 'GBPUSD', 'AUDNZD'] };
+  assert.equal(deployedCapital({ ...base, capital: 'shared' } as Run), 10_000);
+  assert.equal(deployedCapital({ ...base, capital: 'per_symbol' } as Run), 30_000);
+  // Runs stored before the field existed were shared.
+  assert.equal(deployedCapital({ ...base } as Run), 10_000);
+}

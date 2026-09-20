@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Run, Trade } from '../types';
-import { byExit, equityPath, summarize } from '../stats';
+import { byExit, deployedCapital, equityPath, summarize } from '../stats';
 import { fmtMoney, fmtPct, fmtR, moneyClass } from '../fmt';
 import { EquityChart } from './EquityChart';
 import { TradeRows } from './TradeRows';
@@ -11,9 +11,9 @@ import { TradeRows } from './TradeRows';
  * keyboard path to the same thing.
  */
 export function ReplayTab({ run, trades, onOpen }: { run: Run; trades: Trade[]; onOpen: (id: string) => void }) {
-  const points = useMemo(() => equityPath(trades, run.initialBalance), [trades, run.initialBalance]);
+  const points = useMemo(() => equityPath(trades, deployedCapital(run)), [trades, deployedCapital(run)]);
   const ordered = useMemo(() => [...trades].sort(byExit), [trades]);
-  const all = useMemo(() => summarize(trades, run.initialBalance), [trades, run.initialBalance]);
+  const all = useMemo(() => summarize(trades, deployedCapital(run)), [trades, deployedCapital(run)]);
 
   const years = useMemo(() => [...new Set(points.map((p) => new Date(p.t).getUTCFullYear()))], [points]);
   const worst: [number, number] | null = all.ddTrough >= 0
@@ -34,7 +34,7 @@ export function ReplayTab({ run, trades, onOpen }: { run: Run; trades: Trade[]; 
   );
   const startEq = inWin.length
     ? points.find((p) => p.trade._id === inWin[0]._id)!.equity - inWin[0].netProfit
-    : run.initialBalance;
+    : deployedCapital(run);
   const s = summarize(inWin, startEq);
 
   const cells = [
@@ -58,7 +58,7 @@ export function ReplayTab({ run, trades, onOpen }: { run: Run; trades: Trade[]; 
         ))}
       </div>
       <div className="card" style={{ padding: '10px 6px 4px' }}>
-        <EquityChart points={points} start={run.initialBalance} selection={sel}
+        <EquityChart points={points} start={deployedCapital(run)} selection={sel}
           onSelect={(r) => { setSel(r); setActive(r ? '' : 'All'); }} />
       </div>
       <p style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: -6 }}>

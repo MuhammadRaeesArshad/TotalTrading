@@ -6,6 +6,7 @@ import { backtestApi } from '../features/backtests/api';
 import { useRun, useTrades } from '../features/backtests/hooks';
 import type { Run } from '../features/backtests/types';
 import { fmtDate, fmtMoney, fmtPct, fmtR, moneyClass } from '../features/backtests/fmt';
+import { deployedCapital } from '../features/backtests/stats';
 import { TradesTab } from '../features/backtests/components/TradesTab';
 import { VerdictTab } from '../features/backtests/components/VerdictTab';
 import { LedgerTab } from '../features/backtests/components/LedgerTab';
@@ -21,6 +22,14 @@ const TABS = [
   { id: 'anatomy', label: 'Anatomy' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
+
+/** How the balance was spread, said plainly: a per-pair run deploys a multiple of it. */
+function capitalLabel(run: Run) {
+  const each = `$${run.initialBalance.toLocaleString()}`;
+  return run.capital === 'per_symbol'
+    ? `${each} per pair · $${deployedCapital(run).toLocaleString()} deployed`
+    : `${each} shared`;
+}
 
 /** Same detector, rules, pairs, timeframe, window and capital — differing only in the intrabar policy. */
 function isOptimisticTwin(a: Run, b: Run) {
@@ -99,7 +108,7 @@ export function BacktestRunPage() {
     <>
       <PageHeader
         title={title}
-        lede={run ? `${fmtDate(run.fromDate)} – ${fmtDate(run.toDate)} · ${run.riskPercentPerTrade}% risk · $${run.initialBalance.toLocaleString()} ${run.capital === 'per_symbol' ? 'per pair' : 'shared'} · ${run.intrabarPolicy} intrabar` : undefined}
+        lede={run ? `${fmtDate(run.fromDate)} – ${fmtDate(run.toDate)} · ${run.riskPercentPerTrade}% risk · ${capitalLabel(run)} · ${run.intrabarPolicy} intrabar` : undefined}
         actions={<>
           <Link to="/backtests" className="btn2" style={{ textDecoration: 'none' }}>All backtests</Link>
           {run && <button className="btn-loss" onClick={remove}>Delete</button>}
@@ -153,7 +162,7 @@ export function BacktestRunPage() {
               {tab === 'verdict' && <VerdictTab run={run} trades={trades} optimistic={twin} onRunOptimistic={runTwin} startingOptimistic={startingTwin} />}
               {tab === 'ledger' && <LedgerTab run={run} trades={trades} onOpen={openTrade} />}
               {tab === 'replay' && <ReplayTab run={run} trades={trades} onOpen={openTrade} />}
-              {tab === 'anatomy' && <AnatomyTab trades={trades} initialBalance={run.initialBalance} />}
+              {tab === 'anatomy' && <AnatomyTab trades={trades} initialBalance={deployedCapital(run)} />}
             </>
           )}
         </>

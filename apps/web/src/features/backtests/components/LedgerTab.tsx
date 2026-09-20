@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Run, Trade } from '../types';
-import { byExit, isWin, rOf, summarize } from '../stats';
+import { byExit, deployedCapital, isWin, rOf, summarize } from '../stats';
 import { fmtDate, fmtMoney, fmtPct, fmtR, money0, moneyClass } from '../fmt';
 import { TradeRows } from './TradeRows';
 
@@ -14,12 +14,12 @@ type Key = 'net' | 'wr' | 'pf' | 'exp' | 'dd';
 export function LedgerTab({ run, trades, onOpen }: { run: Run; trades: Trade[]; onOpen: (id: string) => void }) {
   const [key, setKey] = useState<Key>('pf');
   const m = run.metrics!;
-  const s = useMemo(() => summarize(trades, run.initialBalance), [trades, run.initialBalance]);
+  const s = useMemo(() => summarize(trades, deployedCapital(run)), [trades, deployedCapital(run)]);
   const wins = useMemo(() => trades.filter(isWin).sort((a, b) => b.netProfit - a.netProfit), [trades]);
   const losses = useMemo(() => trades.filter((t) => !isWin(t)).sort((a, b) => a.netProfit - b.netProfit), [trades]);
   const ordered = useMemo(() => [...trades].sort(byExit), [trades]);
 
-  let peakEq = run.initialBalance;
+  let peakEq = deployedCapital(run);
   for (let i = 0; i <= s.ddPeak; i++) peakEq += ordered[i]?.netProfit ?? 0;
   let troughEq = peakEq;
   for (let i = s.ddPeak + 1; i <= s.ddTrough; i++) troughEq += ordered[i]?.netProfit ?? 0;

@@ -163,6 +163,10 @@ class LiveGateway(BaseGateway):
                     volume_step=s.volume_step,
                     selected=bool(s.select),
                     trade_allowed=s.trade_mode != self._mt5.SYMBOL_TRADE_MODE_DISABLED,
+                    swap_long=float(getattr(s, "swap_long", 0.0) or 0.0),
+                    swap_short=float(getattr(s, "swap_short", 0.0) or 0.0),
+                    # MT5 counts Sunday as 0, same as we do.
+                    swap_triple_weekday=int(getattr(s, "swap_rollover3days", 3) or 3),
                 )
                 for s in raw
             ]

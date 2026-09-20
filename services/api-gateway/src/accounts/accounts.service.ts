@@ -21,6 +21,8 @@ const MAJOR_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'
 const MAJOR_PAIRS = [
   'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD',
 ];
+/** Not a currency pair, but it trades like one and it is asked for by name. */
+const METALS = ['XAUUSD'];
 
 @Injectable()
 export class AccountsService {
@@ -169,13 +171,19 @@ export class AccountsService {
     return account;
   }
 
+  /**
+   * `onlyForex` means "the instruments this system knows how to price", which
+   * now includes gold — it is not a currency pair, but the engine has a point
+   * size for it and it is asked for by name. A broker's thousands of CFDs and
+   * indices stay out, because nothing here prices them.
+   */
   listInstruments(accountId: string, onlyForex = false) {
     const filter: Record<string, unknown> = {
       accountId: new Types.ObjectId(accountId),
     };
     if (onlyForex) {
       filter.instrumentClass = {
-        $in: [InstrumentClass.MAJOR, InstrumentClass.MINOR],
+        $in: [InstrumentClass.MAJOR, InstrumentClass.MINOR, InstrumentClass.METAL],
       };
     }
     return this.instruments.find(filter).sort({ symbol: 1 }).exec();
@@ -250,6 +258,9 @@ export class AccountsService {
               volumeStep: s.volume_step,
               selected: s.selected,
               tradable: s.trade_allowed,
+              swapLong: s.swap_long ?? null,
+              swapShort: s.swap_short ?? null,
+              swapTripleWeekday: s.swap_triple_weekday ?? null,
             },
           },
           upsert: true,
@@ -273,6 +284,8 @@ export class AccountsService {
     const core = symbol.toUpperCase().replace(/[^A-Z]/g, '');
     if (core.length < 6) return null;
     const candidate = core.slice(0, 6);
+    if (METALS.includes(candidate)) return candidate;
+
     const base = candidate.slice(0, 3);
     const quote = candidate.slice(3, 6);
     if (!MAJOR_CURRENCIES.includes(base) || !MAJOR_CURRENCIES.includes(quote)) {
@@ -283,6 +296,7 @@ export class AccountsService {
 
   private classify(normalized: string | null): InstrumentClass {
     if (!normalized) return InstrumentClass.OTHER;
+    if (METALS.includes(normalized)) return InstrumentClass.METAL;
     if (MAJOR_PAIRS.includes(normalized)) return InstrumentClass.MAJOR;
     // Both legs are major currencies but neither side is USD — that's a cross/minor.
     return InstrumentClass.MINOR;

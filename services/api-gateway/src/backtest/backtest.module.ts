@@ -1,12 +1,25 @@
 import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
 import { AccountsModule } from '../accounts/accounts.module';
+import {
+  Backtest, BacktestSchema, Instrument, InstrumentSchema, Sweep, SweepSchema, Trade, TradeSchema,
+} from '../schemas';
 import { BacktestClient } from './backtest.client';
 import { BacktestController } from './backtest.controller';
+import { BacktestService } from './backtest.service';
 
 @Module({
-  imports: [AccountsModule],
+  imports: [
+    AccountsModule,
+    MongooseModule.forFeature([
+      { name: Backtest.name, schema: BacktestSchema },
+      { name: Trade.name, schema: TradeSchema },
+      { name: Sweep.name, schema: SweepSchema },
+      { name: Instrument.name, schema: InstrumentSchema },
+    ]),
+  ],
   controllers: [BacktestController],
-  providers: [BacktestClient],
+  providers: [BacktestClient, BacktestService],
   exports: [BacktestClient],
 })
 export class BacktestModule {}

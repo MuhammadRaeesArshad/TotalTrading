@@ -14,8 +14,9 @@ export enum SignalState {
 }
 
 /**
- * One detected setup. Written only by strategy-engine and backtest-engine —
- * the gateway reads this collection, it never writes it (spec §6.6).
+ * One detected setup. The engine detects; the gateway persists (rule 3 — the
+ * gateway is the only Mongo writer, so this shape is defined here and nowhere
+ * else).
  */
 @Schema({ collection: 'signals', timestamps: true })
 export class Signal {

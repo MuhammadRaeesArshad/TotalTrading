@@ -3,6 +3,7 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { Mt5Client } from '../mt5/mt5.client';
 import { BacktestClient } from '../backtest/backtest.client';
+import { AiClient } from '../ai/ai.client';
 
 @Controller()
 export class HealthController {
@@ -10,6 +11,7 @@ export class HealthController {
     @InjectConnection() private readonly mongo: Connection,
     private readonly mt5: Mt5Client,
     private readonly backtest: BacktestClient,
+    private readonly ai: AiClient,
   ) {}
 
   /** Liveness: is the process up? Kept dependency-free so k8s won't restart
@@ -34,12 +36,16 @@ export class HealthController {
   async services() {
     // Probed in parallel — a slow or dead service should not add its timeout
     // to every other one on the page.
-    const [mt5, backtest] = await Promise.all([
+    const [mt5, engine, ai] = await Promise.all([
       this.mt5
         .health()
         .then((h) => ({ reachable: true, ...h }))
         .catch((e: Error) => ({ reachable: false, detail: e.message })),
       this.backtest
+        .health()
+        .then((h) => ({ reachable: true, ...h }))
+        .catch((e: Error) => ({ reachable: false, detail: e.message })),
+      this.ai
         .health()
         .then((h) => ({ reachable: true, ...h }))
         .catch((e: Error) => ({ reachable: false, detail: e.message })),
@@ -52,9 +58,8 @@ export class HealthController {
         status: this.mongo.readyState === 1 ? 'ok' : 'disconnected',
       },
       'mt5-connector': mt5,
-      'strategy-engine': { reachable: false, status: 'not_implemented' },
-      'backtest-engine': backtest,
-      'ai-analysis': { reachable: false, status: 'not_implemented' },
+      engine,
+      'ai-analysis': ai,
     };
   }
 }

@@ -1,12 +1,14 @@
 import {
-  BadRequestException, Body, Controller, Get, HttpCode, Param, Post, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthedUser } from '../auth/jwt.strategy';
 import { AccountsService } from '../accounts/accounts.service';
 import { BacktestClient } from './backtest.client';
-import { ImportBarsDto } from './dto';
+import { BacktestService } from './backtest.service';
+import { ArchiveRunDto, ExploreDto, ImportBarsDto, StartBacktestDto, StartSweepDto } from './dto';
 
 /** A year of M5 is ~75k bars per pair; this keeps one request bounded. */
 const MAX_SERIES_PER_IMPORT = 200;
@@ -17,7 +19,108 @@ export class BacktestController {
   constructor(
     private readonly engine: BacktestClient,
     private readonly accounts: AccountsService,
+    private readonly runs: BacktestService,
   ) {}
+
+  /** Recent history imports, newest first, with live progress. */
+  @Get('imports')
+  imports() {
+    return this.engine.imports();
+  }
+
+  /** One import's progress, and its per-series report once finished. */
+  @Get('imports/:id')
+  importStatus(@Param('id') id: string) {
+    return this.engine.importStatus(id);
+  }
+
+  /** Detectors the engine can run, with their rule versions. */
+  @Get('detectors')
+  detectors() {
+    return this.engine.detectors();
+  }
+
+  @Post('runs')
+  startRun(@CurrentUser() user: AuthedUser, @Body() dto: StartBacktestDto) {
+    return this.runs.start(user.id, dto);
+  }
+
+  /** `?archived=true` returns the put-aside list instead of the working one. */
+  @Get('runs')
+  listRuns(@CurrentUser() user: AuthedUser, @Query('archived') archived?: string) {
+    return this.runs.list(user.id, archived === 'true');
+  }
+
+  @Patch('runs/:id/archive')
+  archiveRun(
+    @CurrentUser() user: AuthedUser,
+    @Param('id') id: string,
+    @Body() dto: ArchiveRunDto,
+  ) {
+    return this.runs.setArchived(user.id, id, dto.archived);
+  }
+
+  @Get('runs/:id')
+  getRun(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.get(user.id, id);
+  }
+
+  /** Explores a strategy: every setting across its range, one at a time. */
+  @Post('sweeps')
+  startSweep(@CurrentUser() user: AuthedUser, @Body() dto: StartSweepDto) {
+    return this.runs.startSweep(user.id, dto);
+  }
+
+  @Get('sweeps')
+  listSweeps(@CurrentUser() user: AuthedUser, @Query('archived') archived?: string) {
+    return this.runs.listSweeps(user.id, archived === 'true');
+  }
+
+  @Get('sweeps/:id')
+  getSweep(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.getSweep(user.id, id);
+  }
+
+  @Patch('sweeps/:id/cancel')
+  cancelSweep(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.cancelSweep(user.id, id);
+  }
+
+  /**
+   * Trades sliced across many runs: by setting, pair, session, year, month or
+   * direction, with a floor on how many trades a row needs to count.
+   */
+  @Post('explore')
+  @HttpCode(200)
+  explore(@CurrentUser() user: AuthedUser, @Body() dto: ExploreDto) {
+    return this.runs.explore(user.id, dto);
+  }
+
+  /** Per-pair totals, so the list can show a run's spread without opening it. */
+  @Get('runs/:id/by-pair')
+  byPair(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.byPair(user.id, id);
+  }
+
+  @Get('runs/:id/trades')
+  listTrades(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.listTrades(user.id, id);
+  }
+
+  /** Bars around one trade, for the chart shown beside it. */
+  @Get('runs/:id/trades/:tradeId/bars')
+  tradeBars(
+    @CurrentUser() user: AuthedUser,
+    @Param('id') id: string,
+    @Param('tradeId') tradeId: string,
+  ) {
+    return this.runs.tradeBars(user.id, id, tradeId);
+  }
+
+  @Delete('runs/:id')
+  removeRun(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.remove(user.id, id);
+  }
 
   @Get('health')
   health() {

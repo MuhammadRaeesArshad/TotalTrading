@@ -26,12 +26,152 @@ export interface ImportReport {
   elapsed_ms: number;
 }
 
+/** A background import, as the engine reports it while it runs. */
+export interface ImportJob {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  created_at: number;
+  finished_at: number | null;
+  series_total: number;
+  series_done: number;
+  bars_done: number;
+  /** e.g. "EURUSD H1" while that series is being pulled. */
+  current: string;
+  report?: ImportReport;
+}
+
 export interface CachedSeries {
   symbol: string;
   timeframe: string;
   bars: number;
   first_ts: number | null;
   last_ts: number | null;
+}
+
+/** The engine's job states, exactly as it serialises them. */
+export type EngineJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** Body for `POST /runs`. Snake case because it is the engine's wire format. */
+export interface EngineRunSpec {
+  detector: string;
+  /** The strategy's own settings. The engine validates them. */
+  params?: Record<string, unknown>;
+  symbols: string[];
+  timeframe: string;
+  higher_timeframes?: string[];
+  from_ts: number;
+  to_ts: number;
+  sim?: {
+    initial_balance?: number;
+    risk_percent?: number;
+    commission_per_lot?: number;
+    extra_spread_points?: number;
+    slippage_points?: number;
+    max_open_per_symbol?: number;
+    intrabar?: 'pessimistic' | 'optimistic';
+    capital?: 'shared' | 'per_symbol';
+    sizing?: 'fixed' | 'compound';
+  };
+  /** Broker figures per symbol. Swap only ever reaches the engine this way. */
+  symbol_sim?: Record<string, {
+    point_size?: number;
+    point_value_per_lot?: number;
+    volume_min?: number;
+    volume_max?: number;
+    volume_step?: number;
+    swap_long_points?: number;
+    swap_short_points?: number;
+    swap_triple_weekday?: number;
+  }>;
+}
+
+export interface EngineMetrics {
+  total_trades: number;
+  wins: number;
+  losses: number;
+  /** Percent, 0–100. */
+  win_rate: number;
+  net_profit: number;
+  gross_profit: number;
+  gross_loss: number;
+  /** `null` when there were no losing trades — serde writes infinity as null. */
+  profit_factor: number | null;
+  expectancy: number;
+  expectancy_r: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  sharpe: number | null;
+  avg_win: number;
+  avg_loss: number;
+  longest_losing_streak: number;
+  longest_winning_streak: number;
+  final_equity: number;
+  ambiguous_exits: number;
+}
+
+export interface EngineTrade {
+  symbol: string;
+  direction: 'long' | 'short';
+  volume: number;
+  entry_time: number;
+  entry_price: number;
+  exit_time: number;
+  exit_price: number;
+  stop_loss: number;
+  take_profit: number | null;
+  exit_reason: 'stop_loss' | 'take_profit' | 'end_of_data';
+  gross_profit: number;
+  commission: number;
+  swap?: number;
+  net_profit: number;
+  r_multiple: number;
+  ambiguous_exit: boolean;
+  bars_held: number;
+  mae_r: number;
+  mfe_r: number;
+  detail: Record<string, number>;
+}
+
+export interface EngineSkipCounts {
+  max_open: number;
+  stop_gapped: number;
+  target_passed: number;
+  stop_inside_costs: number;
+  below_min_volume: number;
+  no_entry_bar: number;
+}
+
+export interface EngineRunResult {
+  detector: string;
+  detector_version: number;
+  skipped: EngineSkipCounts;
+  metrics: EngineMetrics;
+  /** `t` is a trade's exit time in unix seconds; `drawdown` is in money. */
+  equity_curve: { t: number; equity: number; drawdown: number }[];
+  trades: EngineTrade[];
+  bars_processed: number;
+  signals_generated: number;
+  elapsed_ms: number;
+  engine_version: string;
+}
+
+export interface EngineJob {
+  id: string;
+  status: EngineJobStatus;
+  progress_pct: number;
+  error: string | null;
+  result?: EngineRunResult;
+}
+
+export interface EngineBars {
+  symbol: string;
+  timeframe: string;
+  count: number;
+  time: number[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
 }
 
 /**
@@ -49,22 +189,58 @@ export class BacktestClient {
 
   constructor(config: ConfigService) {
     this.baseUrl = config
-      .get<string>('backtestEngineUrl')!
+      .get<string>('engineUrl')!
       .replace(/\/$/, '');
   }
 
   health() {
-    return this.request<Record<string, unknown>>('GET', '/health', undefined, 10_000);
+    return this.request<Record<string, unknown> & { engine_version?: string }>(
+      'GET', '/health', undefined, 10_000,
+    );
   }
 
   cache() {
     return this.request<{ series: CachedSeries[] }>('GET', '/cache', undefined, 30_000);
   }
 
+  detectors() {
+    return this.request<{
+      detectors: string[];
+      versions: Record<string, number>;
+      /** Per-strategy description, timeframes and settings schema. */
+      strategies: unknown[];
+    }>('GET', '/detectors', undefined, 10_000);
+  }
+
+  /** Queues a run. Returns at once with the engine's job id. */
+  startRun(spec: EngineRunSpec) {
+    return this.request<{ id: string; status: EngineJobStatus }>('POST', '/runs', spec, 60_000);
+  }
+
+  /** Status and progress only — cheap enough to poll every second. */
+  runProgress(id: string) {
+    return this.request<EngineJob>('GET', `/runs/${encodeURIComponent(id)}/progress`, undefined, 10_000);
+  }
+
+  /** The full job including its result. Can be large: every trade of the run. */
+  runResult(id: string) {
+    return this.request<EngineJob>('GET', `/runs/${encodeURIComponent(id)}`, undefined, 120_000);
+  }
+
+  bars(symbol: string, timeframe: string, fromTs: number, toTs: number) {
+    const q = `from_ts=${Math.floor(fromTs)}&to_ts=${Math.floor(toTs)}`;
+    return this.request<EngineBars>(
+      'GET',
+      `/bars/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}?${q}`,
+      undefined,
+      30_000,
+    );
+  }
+
   /**
-   * Backfills the bar cache. Deliberately long-running: importing years of M5
-   * takes minutes against a real terminal, and the answer the caller wants is
-   * how far back the data actually goes — which only exists once it is done.
+   * Starts backfilling the bar cache in the background and returns at once
+   * with a job id. Years of history take minutes against a real terminal;
+   * progress is read with `importStatus`.
    */
   importBars(payload: {
     credentials: Mt5Credentials;
@@ -73,7 +249,15 @@ export class BacktestClient {
     from_ts: number;
     to_ts: number;
   }) {
-    return this.request<ImportReport>('POST', '/import', payload, 30 * 60_000);
+    return this.request<{ id: string; status: string }>('POST', '/import', payload, 30_000);
+  }
+
+  importStatus(id: string) {
+    return this.request<ImportJob>('GET', `/imports/${encodeURIComponent(id)}`, undefined, 10_000);
+  }
+
+  imports() {
+    return this.request<ImportJob[]>('GET', '/imports', undefined, 10_000);
   }
 
   private async request<T>(

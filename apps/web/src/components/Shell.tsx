@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { api } from '../lib/api';
 import {
-  IconAccounts, IconAnalysis, IconBacktests, IconJobs, IconJournal,
+  IconAccounts, IconAnalysis, IconBacktests, IconExplore, IconJobs, IconJournal,
   IconLogs, IconPositions, IconSettings, IconStrategies, IconSummary,
   IconTheme, Logomark,
 } from './icons';
@@ -16,6 +16,7 @@ const NAV = [
   { sep: true },
   { to: '/jobs', label: 'Jobs', Icon: IconJobs },
   { to: '/backtests', label: 'Backtests', Icon: IconBacktests },
+  { to: '/explore', label: 'Explore', Icon: IconExplore },
   { to: '/analysis', label: 'AI analysis', Icon: IconAnalysis },
   { sep: true },
   { to: '/journal', label: 'Journal', Icon: IconJournal },

@@ -129,6 +129,10 @@ button{font-family:inherit;}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px;}
 th{text-align:left;padding:9px 16px;color:var(--fg-3);font-weight:500;font-size:11.5px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2);}
 th.r,td.r{text-align:right;}
+.sortbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+.sortbtn:hover,.sortbtn:focus-visible,th[aria-sort=ascending] .sortbtn,th[aria-sort=descending] .sortbtn{color:var(--fg);}
+.sortbtn:focus-visible{outline:2px solid var(--fg-3);outline-offset:3px;border-radius:3px;}
+.sortbtn .arrow{font-size:8px;width:8px;}
 td{padding:11px 16px;border-bottom:1px solid var(--line);white-space:nowrap;}
 tbody tr:last-child td{border-bottom:none;}
 tbody tr:hover{background:var(--surface-2);}
@@ -239,3 +243,228 @@ tbody tr:hover{background:var(--surface-2);}
 .mockbar b{color:var(--fg);font-weight:600;}
 
 .link{color:var(--fg);text-decoration:underline;text-underline-offset:2px;cursor:pointer;background:none;border:none;padding:0;font:inherit;}
+
+/* ========== BACKTEST RESULTS ========== */
+/* Colour rule: green and red mean money and nothing else. Pass/fail is a
+   filled vs struck-hollow mark; wins are filled glyphs, losses hollow; candles
+   are grey. Nothing on this page depends on colour alone. */
+
+.tabs2{display:flex;gap:2px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:3px;margin-bottom:16px;overflow-x:auto;}
+.tabs2 button{background:none;border:none;color:var(--fg-2);font-size:12.5px;padding:7px 13px;border-radius:6px;cursor:pointer;white-space:nowrap;}
+.tabs2 button:hover{color:var(--fg);}
+.tabs2 button[aria-selected="true"]{background:var(--surface-3);color:var(--fg);font-weight:500;}
+
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:16px;}
+.strip>div{padding:13px 15px;border-right:1px solid var(--line);min-width:0;}
+.strip>div:last-child{border-right:none;}
+.strip .l{font-size:11.5px;color:var(--fg-2);font-weight:500;}
+.strip .v{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;letter-spacing:-.02em;margin-top:5px;}
+.strip .s{font-size:11px;color:var(--fg-3);margin-top:3px;}
+@media(max-width:1100px){.strip{grid-template-columns:repeat(4,minmax(0,1fr));}.strip>div:nth-child(4){border-right:none;}.strip>div:nth-child(-n+4){border-bottom:1px solid var(--line);}}
+@media(max-width:600px){.strip{grid-template-columns:repeat(2,minmax(0,1fr));}.strip>div{border-bottom:1px solid var(--line);}.strip>div:nth-child(even){border-right:none;}.strip>div:last-child:nth-child(odd){grid-column:1 / -1;border-right:none;}}
+
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--fg-2);margin:-12px 0 18px;}
+.meta b{color:var(--fg);font-weight:500;font-family:'JetBrains Mono',monospace;font-size:11.5px;}
+
+/* Master / detail: the list scrolls, the selected trade stays in view. */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,520px);gap:14px;align-items:start;}
+.split .detail{position:sticky;top:16px;}
+@media(max-width:1150px){.split{grid-template-columns:1fr;}.split .detail{position:static;}}
+.tl-scroll{max-height:calc(100vh - 290px);overflow:auto;}
+@media(max-width:1150px){.tl-scroll{max-height:none;}}
+table.tl{min-width:640px;font-size:12.5px;}
+table.tl td{padding:8px 12px;} table.tl th{padding:8px 12px;position:sticky;top:0;z-index:1;}
+table.tl tbody tr{cursor:pointer;}
+table.tl tbody tr.sel{background:var(--surface-3);}
+table.tl tbody tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--fg);}
+.inline-detail td{padding:0!important;background:var(--bg);cursor:default;}
+/* Narrow screens: drop the low-priority columns so the table fits the screen,
+   which keeps the inline trade panel inside it rather than scrolling sideways. */
+@media(max-width:1150px){table.tl{min-width:0;}.tl .opt{display:none;}}
+
+.rg{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:0;}
+.rg.w{background:var(--gain);} .rg.l{border:1.5px solid var(--loss);}
+.dir{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-2);}
+.amb{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-2);border:1px solid var(--line-strong);border-radius:4px;padding:0 4px;margin-left:6px;}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);}
+.filters .count{margin-left:auto;font-size:12px;color:var(--fg-3);font-family:'JetBrains Mono',monospace;}
+.fchip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-3);border:1px solid var(--line-strong);color:var(--fg);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;}
+.fchip button{background:none;border:none;cursor:pointer;color:var(--fg-2);width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:14px;line-height:1;}
+.fchip button:hover{background:var(--surface-2);color:var(--fg);}
+
+/* Pass/fail marks. Filled passes; struck hollow fails; dashed hollow is unknown. */
+.mk{display:inline-block;width:14px;height:14px;border-radius:50%;flex-shrink:0;position:relative;}
+.mk.pass{background:var(--fg);}
+.mk.fail{border:1.5px solid var(--fg-2);}
+.mk.fail::after{content:'';position:absolute;left:5px;top:1px;width:1.5px;height:9px;background:var(--fg-2);transform:rotate(45deg);}
+.mk.unknown{border:1.5px dashed var(--fg-3);}
+.crow{display:grid;grid-template-columns:22px minmax(0,1fr) 110px 110px;gap:14px;align-items:start;padding:13px 16px;border-bottom:1px solid var(--line);}
+.crow:last-child{border-bottom:none;}
+.crow.fail{background:var(--surface-2);}
+.crow .t{font-weight:500;font-size:13px;} .crow .why{color:var(--fg-2);font-size:12px;margin-top:3px;}
+.crow .thr,.crow .act{font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;}
+.crow .thr{color:var(--fg-3);}
+@media(max-width:620px){.crow{grid-template-columns:22px minmax(0,1fr) 84px;}.crow .thr{display:none;}}
+.pips{display:flex;gap:5px;flex-wrap:wrap;}
+.verdict-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start;}
+@media(max-width:900px){.verdict-grid{grid-template-columns:1fr;}.verdict-sum{order:-1;}}
+.ledger-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:start;}
+@media(max-width:900px){.ledger-grid{grid-template-columns:1fr;}}
+
+.tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:14px;}
+@media(max-width:900px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr));}.tiles>.tile:last-child:nth-child(odd){grid-column:1 / -1;}}
+.tile{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px 13px;cursor:pointer;display:flex;flex-direction:column;gap:3px;color:var(--fg);font:inherit;}
+.tile:hover{border-color:var(--line-strong);}
+.tile[aria-selected="true"]{border-color:var(--fg);background:var(--surface-2);}
+.tile .l{font-size:11.5px;color:var(--fg-3);}
+.tile .v{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;letter-spacing:-.02em;}
+.eq{font-family:'JetBrains Mono',monospace;font-size:13.5px;line-height:1.9;}
+.eq .op{color:var(--fg-3);padding:0 4px;}
+.eq .res{display:block;font-size:24px;font-weight:600;margin-top:4px;}
+
+.chart{display:block;width:100%;height:auto;}
+.chart text{font-family:'JetBrains Mono',monospace;font-size:10px;fill:var(--fg-3);font-variant-ligatures:none;}
+/* Labels that sit over candles get a halo in the card colour so they stay legible. */
+.chart text.halo{paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round;fill:var(--fg-2);}
+.chart .hit{cursor:pointer;}
+.chart .hit:hover .bg{fill:var(--surface-2);}
+/* Selection is shown by the bar itself and the filter chip; a click leaves no
+   ring. Keyboard focus still gets a visible outline. */
+.chart .hit:focus{outline:none;}
+.chart .hit:focus-visible .bg{stroke:var(--fg-2);stroke-width:1;}
+.brushable{touch-action:none;cursor:crosshair;}
+
+.kv{display:grid;grid-template-columns:1fr auto;gap:5px 12px;font-size:12.5px;}
+.kv dt{color:var(--fg-3);} .kv dd{margin:0;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;}
+.big-r{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.1;}
+.xbar{height:6px;border-radius:3px;background:var(--surface-3);position:relative;overflow:hidden;}
+.xbar i{position:absolute;top:0;bottom:0;border-radius:3px;}
+
+/* Six-cell strip (Replay): six across, three on tablets, two on phones. */
+.strip.six{grid-template-columns:repeat(6,minmax(0,1fr));}
+@media(max-width:1100px){.strip.six{grid-template-columns:repeat(3,minmax(0,1fr));}.strip.six>div{border-right:1px solid var(--line);border-bottom:1px solid var(--line);}.strip.six>div:nth-child(3n){border-right:none;}.strip.six>div:nth-child(n+4){border-bottom:none;}}
+@media(max-width:600px){.strip.six{grid-template-columns:repeat(2,minmax(0,1fr));}.strip.six>div:nth-child(3n){border-right:1px solid var(--line);}.strip.six>div:nth-child(even){border-right:none;}.strip.six>div:nth-child(n+4){border-bottom:1px solid var(--line);}.strip.six>div:nth-child(n+5){border-bottom:none;}}
+
+/* Pair picker: a scrollable tray of toggles, so choosing three out of thirty
+   is three clicks rather than twenty-seven. */
+.picker{display:flex;flex-wrap:wrap;gap:6px;max-height:172px;overflow-y:auto;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);}
+.pairchip{font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:-.01em;background:var(--surface-2);border:1px solid var(--line);color:var(--fg-2);border-radius:6px;padding:5px 9px;cursor:pointer;}
+.pairchip:hover:not(:disabled){border-color:var(--line-strong);color:var(--fg);}
+.pairchip.on{background:var(--fg);border-color:var(--fg);color:var(--bg);font-weight:600;}
+.pairchip:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Row actions sit on the right of a table row. Kept quiet until the row is
+   hovered or something in it has focus: a delete button shouting from every
+   row makes a list of results look like a list of hazards. */
+/* Always visible. Hiding these until hover kept the list calm and made the
+   feature impossible to find, which is a worse trade than a busy row. */
+.row-actions{display:inline-flex;gap:4px;justify-content:flex-end;}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;padding:0;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:var(--surface);color:var(--fg-2);}
+.iconbtn:hover,.iconbtn:focus-visible{border-color:var(--line-strong);
+  background:var(--surface-3);color:var(--fg);}
+.iconbtn.danger:hover,.iconbtn.danger:focus-visible{background:var(--loss-dim);
+  color:var(--loss);border-color:var(--loss-line);}
+
+/* The accordion's own control, sitting with the name it opens. Borderless so
+   the row still reads as a row, not as a toolbar. */
+.disclose{display:inline-flex;align-items:center;justify-content:center;
+  width:20px;height:20px;margin-right:4px;padding:0;border:none;border-radius:4px;
+  background:none;color:var(--fg-3);cursor:pointer;vertical-align:-4px;}
+.disclose:hover,.disclose:focus-visible{background:var(--surface-3);color:var(--fg);}
+
+/* Destructive, and it looks it — but only once you are on it, so the colour
+   means "this one is different" rather than being ambient noise. */
+.btn3.danger:hover,.btn3.danger:focus-visible{background:var(--loss-dim);color:var(--loss);
+  border-color:var(--loss-line);}
+.btn.danger{background:var(--loss);border-color:var(--loss);color:#fff;}
+.btn.danger:hover{filter:brightness(1.08);}
+
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* Multi-select on a table. The checkbox column stays narrow, and a picked row
+   is tinted rather than outlined so a run of selected rows reads as one block. */
+th.pick,td.pick{width:34px;padding-right:0;}
+th.pick input,td.pick input{cursor:pointer;margin:0;vertical-align:middle;}
+tr.picked{background:var(--surface-2);}
+tr.picked .row-actions{opacity:1;}
+
+/* Sits between the tabs and the table, so what a bulk action applies to is
+   always in view above the rows it will change. */
+.selbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  border:1px solid var(--line);background:var(--surface-2);border-radius:8px;
+  padding:8px 12px;margin-bottom:12px;font-size:12.5px;}
+
+/* A sweep folded into one row. Its runs sit under it, set in from the left with
+   a rule down the side, so they read as belonging to it. */
+tr.sweeprow{cursor:pointer;}
+tr.sweeprow > td{background:var(--surface-2);}
+tr.sweeprow:hover > td{background:var(--surface-3);}
+tr.nested > td:first-child{box-shadow:inset 2px 0 0 var(--line-strong);}
+tr.nested > td:nth-child(2){padding-left:34px;}
+
+/* How a run splits across its pairs, opened inline in the list. A fixed grid
+   so every row's numbers line up down the column, and one shared scale so the
+   bar lengths compare within the run. */
+.splitrow > td{background:var(--surface-2);padding:10px 14px;}
+.pairsplit{display:flex;flex-direction:column;gap:2px;}
+/* Same grid as a row, so the panel's headings sit over their own columns. */
+.pairsplit-head{display:grid;grid-template-columns:72px 1fr 62px 44px 48px 76px;
+  gap:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--fg-3);margin-bottom:6px;}
+.pairsplit-row{display:grid;grid-template-columns:72px 1fr 62px 44px 48px 76px;
+  gap:8px;align-items:center;font-size:12px;}
+.pairsplit-track{position:relative;height:12px;background:var(--surface-3);border-radius:3px;}
+/* Zero is the midpoint, so winners and losers read against each other. */
+.pairsplit-track::before{content:'';position:absolute;left:50%;top:-1px;bottom:-1px;
+  width:1px;background:var(--line-strong);}
+.pairsplit-bar{position:absolute;top:0;bottom:0;border-radius:2px;min-width:2px;}
+.pairsplit-bar.up{background:var(--gain);}
+.pairsplit-bar.down{background:var(--loss);}
+@media (max-width:760px){
+  .pairsplit-row,.pairsplit-head{grid-template-columns:64px 1fr 56px 40px;}
+  .pairsplit-row > :nth-child(5),.pairsplit-row > :nth-child(6),
+  .pairsplit-head > :nth-child(5),.pairsplit-head > :nth-child(6){display:none;}
+}
+
+/* The page's filter, sitting above the tabs. Everything below it recomputes
+   from what survives, so what survives is stated on the bar itself. */
+.filterbar{border:1px solid var(--line);background:var(--surface);border-radius:8px;
+  padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;}
+.filterbar-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.filterbar-count{margin-left:auto;font-size:12.5px;color:var(--fg-2);
+  font-family:var(--mono);white-space:nowrap;}
+.selbtn{cursor:pointer;text-align:left;}
+.selbtn.on{border-color:var(--line-strong);color:var(--fg);background:var(--surface-3);}
+
+/* Multi-select as chips: the questions worth asking are combinations, and a
+   row of toggles says that where a dropdown cannot. */
+.chipset{display:inline-flex;flex-wrap:wrap;gap:4px;}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--fg-2);
+  border-radius:999px;padding:4px 11px;font-size:11.5px;cursor:pointer;white-space:nowrap;}
+.chip:hover{border-color:var(--line-strong);color:var(--fg);}
+.chip.on{background:var(--fg);border-color:var(--fg);color:var(--bg);}
+.filterbar-pairs{display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+  border-top:1px solid var(--line);padding-top:8px;}
+@media (max-width:640px){
+  .filterbar-count{margin-left:0;width:100%;}
+}
+
+/* A setting that can differ per pair. Scrolls rather than growing the dialog
+   past the screen — 29 pairs is a long list and the settings below it matter. */
+.perpair{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:6px;max-height:240px;overflow-y:auto;padding:8px;border:1px solid var(--line);
+  border-radius:6px;background:var(--surface-2);}
+.perpair-row{display:grid;grid-template-columns:76px 1fr;gap:8px;align-items:center;}
+.perpair-row select{font-size:11.5px;padding:4px 6px;}
+
+/* A sortable column heading. Looks like the heading it replaces until you
+   want it, so the table does not read as a row of buttons. */
+.th-sort{background:none;border:none;padding:0;font:inherit;color:inherit;
+  cursor:pointer;letter-spacing:inherit;text-transform:inherit;}
+.th-sort:hover{color:var(--fg);}
+.th-sort[aria-pressed="true"]{color:var(--fg);font-weight:600;}
+.th-sort[aria-pressed="true"]::after{content:' ↓';font-size:9px;}

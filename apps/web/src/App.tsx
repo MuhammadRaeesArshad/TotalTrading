@@ -4,10 +4,14 @@ import { Shell } from './components/Shell';
 import { AuthPage } from './pages/AuthPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { SettingsPage } from './pages/SettingsPage';
-import {
-  AnalysisPage, BacktestsPage, JobsPage, JournalPage, LogsPage,
-  PositionsPage, StrategiesPage, SummaryPage,
-} from './pages/stubs';
+import { BacktestsPage } from './pages/BacktestsPage';
+import { BacktestRunPage } from './pages/BacktestRunPage';
+import { SweepPage } from './pages/SweepPage';
+import { ExplorePage } from './pages/ExplorePage';
+import { StrategiesPage } from './pages/StrategiesPage';
+import { JobsPage } from './pages/JobsPage';
+import { SummaryPage } from './pages/SummaryPage';
+import { AnalysisPage, JournalPage, LogsPage, PositionsPage } from './pages/stubs';
 
 function Gate() {
   const { user, loading } = useAuth();
@@ -26,6 +30,9 @@ function Gate() {
         <Route path="positions" element={<PositionsPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="backtests" element={<BacktestsPage />} />
+        <Route path="backtests/:id" element={<BacktestRunPage />} />
+        <Route path="sweeps/:id" element={<SweepPage />} />
+        <Route path="explore" element={<ExplorePage />} />
         <Route path="analysis" element={<AnalysisPage />} />
         <Route path="journal" element={<JournalPage />} />
         <Route path="logs" element={<LogsPage />} />

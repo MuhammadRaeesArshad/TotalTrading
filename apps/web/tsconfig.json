@@ -6,7 +6,10 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": false,
+    // On, so a pure module can build on another and still run under plain
+    // `node` in checks/ — node resolves the extension, Vite and tsc allow it,
+    // and nothing is emitted from here anyway.
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

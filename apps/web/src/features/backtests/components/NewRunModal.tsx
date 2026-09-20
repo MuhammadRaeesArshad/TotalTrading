@@ -4,6 +4,7 @@ import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
 import type { CachedSeries, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
 import { PairPicker } from './PairPicker';
+import { DateRange } from './DateRange';
 
 const toDay = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
 const fromDay = (d: string) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000);
@@ -58,11 +59,25 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
 
   useEffect(() => {
     setSymbols(forTf.map((s) => s.symbol));
-    const firsts = forTf.map((s) => s.first_ts).filter((v): v is number => v != null);
-    const lasts = forTf.map((s) => s.last_ts).filter((v): v is number => v != null);
-    if (firsts.length) setFrom(toDay(Math.max(...firsts)));
-    if (lasts.length) setTo(toDay(Math.min(...lasts)));
   }, [forTf]);
+
+  // The window every selected pair can actually cover: the latest start and
+  // the earliest end, so no pair contributes an empty stretch.
+  const coverage = useMemo(() => {
+    const chosen = forTf.filter((s) => symbols.includes(s.symbol));
+    const firsts = chosen.map((s) => s.first_ts).filter((v): v is number => v != null);
+    const lasts = chosen.map((s) => s.last_ts).filter((v): v is number => v != null);
+    if (!firsts.length || !lasts.length) return { min: '', max: '' };
+    return { min: toDay(Math.max(...firsts)), max: toDay(Math.min(...lasts)) };
+  }, [forTf, symbols]);
+
+  // Default to everything covered, and follow the coverage as pairs change
+  // unless the window was narrowed by hand.
+  useEffect(() => {
+    if (!coverage.min || !coverage.max) return;
+    setFrom((cur) => (!cur || cur < coverage.min ? coverage.min : cur));
+    setTo((cur) => (!cur || cur > coverage.max ? coverage.max : cur));
+  }, [coverage]);
 
   async function submit() {
     setBusy(true);
@@ -132,10 +147,8 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
 
         <PairPicker available={forTf.map((s) => s.symbol)} selected={symbols} onChange={setSymbols} />
 
-        <div className="f2">
-          <div className="f"><label htmlFor="nr-from">From</label><input id="nr-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div className="f"><label htmlFor="nr-to">To</label><input id="nr-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-        </div>
+        <DateRange from={from} to={to} min={coverage.min} max={coverage.max}
+          onChange={(f, t) => { setFrom(f); setTo(t); }} />
 
         {strategy && strategy.params.length > 0 && (
           <div className="f">

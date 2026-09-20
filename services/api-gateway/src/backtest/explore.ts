@@ -82,6 +82,8 @@ export interface ExploreRow {
   /** Best and worst single trade, in R — how much rests on one of them. */
   bestR: number;
   worstR: number;
+  /** The run behind the row, when grouping by setting — so it can be opened. */
+  runId?: string;
 }
 
 export interface ExploreQuery {

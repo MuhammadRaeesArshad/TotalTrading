@@ -245,6 +245,8 @@ export type Dimension = 'pair' | 'session' | 'year' | 'month' | 'direction' | 's
 /** One slice of trades across however many runs were in scope. */
 export interface ExploreRow {
   keys: string[];
+  /** Present when grouped by setting: the run this row came from. */
+  runId?: string;
   n: number;
   wins: number;
   winRate: number;

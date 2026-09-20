@@ -195,21 +195,29 @@ const sgnR = (v: number, dp = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixe
  * Judges a completed run against the criteria. `optimistic` is the same run
  * repeated with the optimistic intrabar policy, when one exists; without it
  * that criterion is reported as unknown rather than guessed.
+ *
+ * Every criterion is derived from `trades`. Four of them used to read the
+ * run's stored metrics whenever it had them — which is always, on a completed
+ * run — so narrowing to London left the headline figures judging all 1,240
+ * trades while the tab beside them showed 87. The run is no longer a parameter
+ * at all, so the unfiltered figures are not reachable from here by accident.
+ *
+ * With no filter the two agree: `summarize` over the whole log reproduces the
+ * engine's own metrics, including drawdown, which both measure as the worst
+ * fall relative to the peak it fell from.
  */
 export function verdict(
-  run: Run,
   trades: Trade[],
   /** What the view being judged started with — filtering changes it. */
   capital: number,
   optimistic: Run | null = null,
 ): Criterion[] {
   const c = DEFAULT_CRITERIA;
-  const m = run.metrics;
   const s = summarize(trades, capital);
-  const n = m?.totalTrades ?? s.n;
-  const pf = m ? m.profitFactor : s.profitFactor;
-  const expR = m?.expectancyR ?? s.expR;
-  const ddPct = m?.maxDrawdownPct ?? s.maxDrawdown * 100;
+  const n = s.n;
+  const pf = s.profitFactor;
+  const expR = s.expR;
+  const ddPct = s.maxDrawdown * 100;
 
   const years = [...groupBy(trades, (t) => String(yearOf(t.exitTime))).values()]
     .sort((a, b) => a.key.localeCompare(b.key));
@@ -217,7 +225,7 @@ export function verdict(
   const withoutTop5 = s.sumR - top5.reduce((a, t) => a + rOf(t), 0);
   const pairs = [...groupBy(trades, (t) => t.symbol).values()];
   const thinnest = pairs.reduce<Group | null>((a, g) => (!a || g.n < a.n ? g : a), null);
-  const ambiguous = m?.ambiguousExits ?? trades.filter((t) => t.ambiguousExit).length;
+  const ambiguous = trades.filter((t) => t.ambiguousExit).length;
   const ambPct = n ? (ambiguous / n) * 100 : 0;
   const optPf = optimistic?.metrics?.profitFactor ?? null;
 

@@ -472,10 +472,18 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     let labels = new Map<string, string>();
 
     if (body.sweepId) {
-      const sweep = await this.sweeps
-        .findOne({ _id: new Types.ObjectId(body.sweepId), userId })
-        .lean();
-      if (!sweep) throw new NotFoundException('No sweep with that id.');
+      // A malformed id is a bad request, not a server error: this is reached
+      // from a link, and a link can carry anything.
+      if (!Types.ObjectId.isValid(body.sweepId)) {
+        throw new BadRequestException(`"${body.sweepId}" is not a sweep id.`);
+      }
+      const sweep = await this.sweeps.findOne({ _id: new Types.ObjectId(body.sweepId), userId: uid }).lean();
+      if (!sweep) {
+        // Say which one, and for whom. A 404 on a sweep that is plainly in the
+        // picker is the kind of thing that costs an afternoon otherwise.
+        this.log.warn(`Explore: no sweep ${body.sweepId} for user ${userId}.`);
+        throw new NotFoundException(`No sweep with the id ${body.sweepId}.`);
+      }
       runIds = sweep.cells.filter((c) => c.runId).map((c) => String(c.runId));
     }
 
@@ -537,6 +545,9 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       for (const row of rows) {
         const id = row.keys[settingAt];
         const run = owned.find((r) => String(r._id) === id);
+        // Keep the id: the label replaces it on screen, but the row still has
+        // to be able to open the run it describes.
+        if (run) row.runId = id;
         row.keys[settingAt] = labels.get(id)
           ?? (run
             ? describeParams(

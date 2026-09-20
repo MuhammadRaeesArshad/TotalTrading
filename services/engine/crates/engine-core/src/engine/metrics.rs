@@ -29,7 +29,15 @@ pub struct Metrics {
     pub expectancy: f64,
     /// Average result per trade in R. Comparable across pairs and account sizes.
     pub expectancy_r: f64,
+    /// Deepest fall from a peak, in account currency.
     pub max_drawdown: f64,
+    /// Deepest fall from a peak as a share of that peak, percent.
+    ///
+    /// Tracked independently of `max_drawdown`, because the two need not happen
+    /// at the same moment: an early 20% dip on a small balance is a worse run of
+    /// risk than a later, larger dollar dip against a much higher peak. Reporting
+    /// the percentage that merely accompanied the biggest currency figure
+    /// understated the risk the account actually ran.
     pub max_drawdown_pct: f64,
     pub sharpe: f64,
     pub avg_win: f64,
@@ -51,6 +59,9 @@ pub struct MetricsAccumulator {
     peak: f64,
     max_drawdown: f64,
     max_drawdown_pct: f64,
+    /// Exit time of the last trade recorded, so the closing curve point lands
+    /// where that trade did rather than at the previous sample.
+    last_exit_time: i64,
 
     total: usize,
     wins: usize,
@@ -88,6 +99,7 @@ impl MetricsAccumulator {
             peak: initial_balance,
             max_drawdown: 0.0,
             max_drawdown_pct: 0.0,
+            last_exit_time: 0,
             total: 0,
             wins: 0,
             losses: 0,
@@ -143,17 +155,15 @@ impl MetricsAccumulator {
             self.return_m2 += delta * (r - self.return_mean);
         }
 
+        self.last_exit_time = trade.exit_time;
+
         if self.equity > self.peak {
             self.peak = self.equity;
         }
         let drawdown = self.peak - self.equity;
-        if drawdown > self.max_drawdown {
-            self.max_drawdown = drawdown;
-            self.max_drawdown_pct = if self.peak > 0.0 {
-                drawdown / self.peak * 100.0
-            } else {
-                0.0
-            };
+        self.max_drawdown = self.max_drawdown.max(drawdown);
+        if self.peak > 0.0 {
+            self.max_drawdown_pct = self.max_drawdown_pct.max(drawdown / self.peak * 100.0);
         }
 
         // Always keep the first and last points, plus every nth in between.
@@ -170,7 +180,7 @@ impl MetricsAccumulator {
         if let Some(&last) = self.curve.last() {
             if last.equity != self.equity {
                 self.curve.push(EquityPoint {
-                    t: last.t,
+                    t: self.last_exit_time.max(last.t),
                     equity: self.equity,
                     drawdown: self.peak - self.equity,
                 });
@@ -235,5 +245,98 @@ impl MetricsAccumulator {
     #[inline]
     pub fn equity(&self) -> f64 {
         self.equity
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::detector::Direction;
+    use crate::engine::sim::ExitReason;
+    use std::collections::HashMap;
+
+    /// A closed trade with only the fields metrics reads.
+    fn trade(net: f64, exit_time: i64) -> Trade {
+        Trade {
+            symbol: "EURUSD".into(),
+            direction: Direction::Long,
+            volume: 0.1,
+            entry_time: exit_time - 1,
+            entry_price: 1.0,
+            entry_index: 0,
+            exit_time,
+            exit_price: 1.0,
+            exit_index: 1,
+            stop_loss: 0.9,
+            take_profit: None,
+            exit_reason: ExitReason::StopLoss,
+            gross_profit: net,
+            commission: 0.0,
+            net_profit: net,
+            r_multiple: net / 100.0,
+            ambiguous_exit: false,
+            bars_held: 1,
+            mae_r: 0.0,
+            mfe_r: 0.0,
+            detail: HashMap::new(),
+        }
+    }
+
+    /// The worst *percentage* fall and the worst *currency* fall need not happen
+    /// at the same time. A 20% dip early on a small balance is the number that
+    /// would have hurt; a larger dollar dip later against a much higher peak is
+    /// a milder one. Reporting the percentage that merely accompanied the
+    /// largest dollar figure understates the risk the account actually ran.
+    #[test]
+    fn worst_percentage_drawdown_is_not_the_one_at_the_largest_currency_drawdown() {
+        let mut acc = MetricsAccumulator::new(1_000.0, 8);
+
+        // Fall 1: 1000 -> 800. 200 currency, 20% of the peak.
+        acc.record(&trade(-200.0, 1));
+        // Climb well past the old peak: 800 -> 5000.
+        acc.record(&trade(4_200.0, 2));
+        // Fall 2: 5000 -> 4700. 300 currency (larger), but only 6% of the peak.
+        acc.record(&trade(-300.0, 3));
+
+        let (m, _) = acc.finish();
+
+        assert_eq!(m.max_drawdown, 300.0, "largest fall in currency");
+        assert!(
+            (m.max_drawdown_pct - 20.0).abs() < 1e-9,
+            "worst fall as a share of the peak it fell from; got {}",
+            m.max_drawdown_pct
+        );
+    }
+
+    /// The two coincide on a monotonic decline, so the split must not disturb
+    /// the ordinary case.
+    #[test]
+    fn a_single_decline_reports_the_same_fall_both_ways() {
+        let mut acc = MetricsAccumulator::new(1_000.0, 4);
+        acc.record(&trade(-100.0, 1));
+        acc.record(&trade(-150.0, 2));
+
+        let (m, _) = acc.finish();
+
+        assert_eq!(m.max_drawdown, 250.0);
+        assert!((m.max_drawdown_pct - 25.0).abs() < 1e-9);
+    }
+
+    /// The equity curve's closing point belongs to the last trade that moved it,
+    /// not to whatever point the sampler happened to keep.
+    #[test]
+    fn the_final_curve_point_carries_the_last_trades_exit_time() {
+        // sample_every = 10_000/4_000 = 2, so trade 3 is not sampled and the
+        // fix-up in finish() has to supply the closing point itself.
+        let mut acc = MetricsAccumulator::new(1_000.0, 10_000);
+        acc.record(&trade(10.0, 100));
+        acc.record(&trade(10.0, 200));
+        acc.record(&trade(10.0, 300));
+
+        let (_, curve) = acc.finish();
+        let last = curve.last().expect("a curve");
+
+        assert_eq!(last.equity, 1_030.0);
+        assert_eq!(last.t, 300, "the last exit, not the previous sample's time");
     }
 }

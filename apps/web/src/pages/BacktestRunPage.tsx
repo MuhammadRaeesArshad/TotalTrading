@@ -195,7 +195,7 @@ export function BacktestRunPage() {
           {trades && filtered.length > 0 && (
             <>
               {tab === 'trades' && <TradesTab run={run} trades={filtered} selectedId={tradeId} onSelect={selectTrade} />}
-              {tab === 'verdict' && <VerdictTab run={run} trades={filtered} capital={capital} optimistic={twin} onRunOptimistic={runTwin} startingOptimistic={startingTwin} />}
+              {tab === 'verdict' && <VerdictTab trades={filtered} capital={capital} optimistic={twin} onRunOptimistic={runTwin} startingOptimistic={startingTwin} />}
               {tab === 'ledger' && <LedgerTab run={run} trades={filtered} capital={capital} onOpen={openTrade} />}
               {tab === 'replay' && <ReplayTab trades={filtered} capital={capital} onOpen={openTrade} />}
               {tab === 'anatomy' && (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { ApiError } from '../lib/api';
 import { backtestApi } from '../features/backtests/api';
@@ -33,6 +33,7 @@ type SortKey = 'sumR' | 'avgR' | 'net' | 'n' | 'winRate';
  */
 export function ExplorePage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const [sweeps, setSweeps] = useState<Sweep[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [result, setResult] = useState<ExploreResult | null>(null);
@@ -268,7 +269,12 @@ export function ExplorePage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.keys.join('|')}>
+                  <tr key={r.keys.join('|')}
+                    onClick={() => r.runId && navigate(`/backtests/${r.runId}`)}
+                    style={r.runId ? { cursor: 'pointer' } : undefined}
+                    tabIndex={r.runId ? 0 : undefined}
+                    onKeyDown={(e) => e.key === 'Enter' && r.runId && navigate(`/backtests/${r.runId}`)}
+                    title={r.runId ? 'Open this run' : undefined}>
                     {r.keys.map((k, i) => <td key={i} className={i === 0 ? 't-name' : 'mono-sm'}>{k}</td>)}
                     <td className="r mono-sm">{r.n.toLocaleString()}</td>
                     <td className="r mono-sm">{fmtPct(r.winRate, 0)}</td>

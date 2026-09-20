@@ -8,10 +8,10 @@ import { BacktestsPage } from './pages/BacktestsPage';
 import { BacktestRunPage } from './pages/BacktestRunPage';
 import { SweepPage } from './pages/SweepPage';
 import { ExplorePage } from './pages/ExplorePage';
-import {
-  AnalysisPage, JobsPage, JournalPage, LogsPage,
-  PositionsPage, StrategiesPage, SummaryPage,
-} from './pages/stubs';
+import { StrategiesPage } from './pages/StrategiesPage';
+import { JobsPage } from './pages/JobsPage';
+import { SummaryPage } from './pages/SummaryPage';
+import { AnalysisPage, JournalPage, LogsPage, PositionsPage } from './pages/stubs';
 
 function Gate() {
   const { user, loading } = useAuth();

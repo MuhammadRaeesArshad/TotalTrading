@@ -12,7 +12,10 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 
 fails=0
-SKIP=(':!*/node_modules/*' ':!*/.venv/*' ':!*/target/*' ':!*/dist/*' ':!scripts/checks/rules.sh')
+# Markdown is excluded because the docs quote the very strings the rules ban —
+# a CLAUDE.md explaining that `order_send` is forbidden must not itself fail.
+SKIP=(':!*/node_modules/*' ':!*/.venv/*' ':!*/target/*' ':!*/dist/*'
+      ':!*.md' ':!scripts/checks/rules.sh')
 
 # Greps tracked files only, so a stray build artefact never fails the build.
 # -E, not the default: this git grep does not treat BRE \| as alternation,

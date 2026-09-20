@@ -378,3 +378,22 @@ tr.picked .row-actions{opacity:1;}
 .selbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
   border:1px solid var(--line);background:var(--surface-2);border-radius:8px;
   padding:8px 12px;margin-bottom:12px;font-size:12.5px;}
+
+/* How a run splits across its pairs, opened inline in the list. A fixed grid
+   so every row's numbers line up down the column, and one shared scale so the
+   bar lengths compare within the run. */
+.splitrow > td{background:var(--surface-2);padding:10px 14px;}
+.pairsplit{display:flex;flex-direction:column;gap:2px;}
+.pairsplit-row{display:grid;grid-template-columns:72px 1fr 62px 44px 48px 76px;
+  gap:8px;align-items:center;font-size:12px;}
+.pairsplit-track{position:relative;height:12px;background:var(--surface-3);border-radius:3px;}
+/* Zero is the midpoint, so winners and losers read against each other. */
+.pairsplit-track::before{content:'';position:absolute;left:50%;top:-1px;bottom:-1px;
+  width:1px;background:var(--line-strong);}
+.pairsplit-bar{position:absolute;top:0;bottom:0;border-radius:2px;min-width:2px;}
+.pairsplit-bar.up{background:var(--gain);}
+.pairsplit-bar.down{background:var(--loss);}
+@media (max-width:760px){
+  .pairsplit-row{grid-template-columns:64px 1fr 56px 40px;}
+  .pairsplit-row > :nth-child(5),.pairsplit-row > :nth-child(6){display:none;}
+}

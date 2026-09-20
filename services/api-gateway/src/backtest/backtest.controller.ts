@@ -86,6 +86,12 @@ export class BacktestController {
     return this.runs.cancelSweep(user.id, id);
   }
 
+  /** Per-pair totals, so the list can show a run's spread without opening it. */
+  @Get('runs/:id/by-pair')
+  byPair(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
+    return this.runs.byPair(user.id, id);
+  }
+
   @Get('runs/:id/trades')
   listTrades(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
     return this.runs.listTrades(user.id, id);

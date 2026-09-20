@@ -136,8 +136,8 @@ export function PairBars({
               </>
             ) : (
               <>
-                <rect x={zero - w + 0.75} y={y0 + 5.75} width={Math.max(w - 1.5, 1)} height={rowH - 13.5} rx={2}
-                  fill="var(--loss-dim)" stroke="var(--loss)" strokeWidth={1.5} opacity={op} />
+                <rect x={zero - w} y={y0 + 5} width={Math.max(w, 1)} height={rowH - 12} rx={2}
+                  fill="var(--loss)" opacity={op} />
                 <text x={zero - w - 5} y={y0 + rowH / 2 + 3} textAnchor="end" style={{ fill: 'var(--loss)' }} opacity={op}>{fmtR(g.sumR, 1)}</text>
               </>
             )}

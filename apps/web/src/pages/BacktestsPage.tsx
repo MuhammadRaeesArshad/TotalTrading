@@ -9,6 +9,7 @@ import { ImportStatus } from '../features/backtests/components/ImportStatus';
 import { ImportModal } from '../features/backtests/components/ImportModal';
 import { NewRunModal } from '../features/backtests/components/NewRunModal';
 import type { Run } from '../features/backtests/types';
+import { PairBreakdown } from '../features/backtests/components/PairBreakdown';
 import { StatusTag } from '../features/backtests/components/StatusTag';
 import { fmtDate, fmtMoney, fmtR, moneyClass } from '../features/backtests/fmt';
 
@@ -30,6 +31,8 @@ export function BacktestsPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /// Rows opened to show how the result splits across pairs.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   /// The row a range selection extends from — the last one clicked plainly.
   const anchor = useRef<string | null>(null);
   /// What the delete dialog is about to remove: one run, or the selection.
@@ -209,6 +212,13 @@ export function BacktestsPage() {
                 {runs.map((r) => (
                   <RunRow key={r._id} run={r} archived={shelf === 'archived'}
                     picked={picked.has(r._id)}
+                    expanded={opened.has(r._id)}
+                    onExpand={() => setOpened((cur) => {
+                      const next = new Set(cur);
+                      if (next.has(r._id)) next.delete(r._id);
+                      else next.add(r._id);
+                      return next;
+                    })}
                     onPick={(range) => pick(r, range)}
                     onOpen={() => navigate(`/backtests/${r._id}`)}
                     onArchive={() => archive(r, shelf === 'current')}
@@ -262,10 +272,14 @@ export function BacktestsPage() {
   );
 }
 
-function RunRow({ run, archived, picked, onPick, onOpen, onArchive, onDelete }: {
+function RunRow({
+  run, archived, picked, expanded, onExpand, onPick, onOpen, onArchive, onDelete,
+}: {
   run: Run;
   archived: boolean;
   picked: boolean;
+  expanded: boolean;
+  onExpand: () => void;
   onPick: (range: boolean) => void;
   onOpen: () => void;
   onArchive: () => void;
@@ -275,6 +289,7 @@ function RunRow({ run, archived, picked, onPick, onOpen, onArchive, onDelete }: 
   // The row itself opens the run, so the buttons must not also do that.
   const only = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
   return (
+    <>
     <tr onClick={onOpen} style={{ cursor: 'pointer' }} tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onOpen()}
       className={picked ? 'picked' : undefined} aria-selected={picked}>
@@ -298,6 +313,10 @@ function RunRow({ run, archived, picked, onPick, onOpen, onArchive, onDelete }: 
       <td className={`r mono-sm ${moneyClass(m?.expectancyR)}`}>{m ? fmtR(m.expectancyR) : '—'}</td>
       <td className="r">
         <div className="row-actions">
+          <button className="btn3" onClick={only(onExpand)} aria-expanded={expanded}
+            title={expanded ? 'Hide the pair split' : 'Show how this splits across pairs'}>
+            {expanded ? 'Hide pairs' : 'Pairs'}
+          </button>
           <button className="btn3" onClick={only(onArchive)}
             title={archived ? 'Move back to the current list' : 'Put aside, keeping every trade'}>
             {archived ? 'Restore' : 'Archive'}
@@ -308,6 +327,14 @@ function RunRow({ run, archived, picked, onPick, onOpen, onArchive, onDelete }: 
         </div>
       </td>
     </tr>
+    {expanded && (
+      <tr className="splitrow">
+        <td colSpan={9}>
+          <PairBreakdown runId={run._id} />
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 

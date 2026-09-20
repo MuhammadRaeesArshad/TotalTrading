@@ -223,3 +223,14 @@ export interface StartSweepInput extends StartRunInput {
   /** Only these settings; empty means every one that declares a range. */
   only?: string[];
 }
+
+/** One pair's contribution to a run, aggregated by the gateway. */
+export interface PairRow {
+  symbol: string;
+  n: number;
+  wins: number;
+  /** Fraction, 0–1. */
+  winRate: number;
+  sumR: number;
+  net: number;
+}

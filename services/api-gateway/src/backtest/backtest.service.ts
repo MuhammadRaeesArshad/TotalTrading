@@ -380,6 +380,42 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       .lean({ flattenMaps: true });
   }
 
+  /**
+   * Per-pair totals for one run.
+   *
+   * Grouped in Mongo rather than by sending thousands of trades to the browser
+   * — the list page shows this for several runs at once, and the answer is a
+   * few dozen rows however many trades produced it.
+   */
+  async byPair(userId: string, id: string) {
+    await this.get(userId, id);
+    const rows = await this.trades.aggregate<{
+      _id: string; n: number; wins: number; sumR: number; net: number;
+    }>([
+      { $match: { backtestId: new Types.ObjectId(id), source: TradeSource.BACKTEST } },
+      {
+        $group: {
+          _id: '$symbol',
+          n: { $sum: 1 },
+          // Same rule as the engine: a trade that nets zero or better is a win.
+          wins: { $sum: { $cond: [{ $gte: ['$netProfit', 0] }, 1, 0] } },
+          sumR: { $sum: '$rMultiple' },
+          net: { $sum: '$netProfit' },
+        },
+      },
+      { $sort: { sumR: -1 } },
+    ]);
+
+    return rows.map((r) => ({
+      symbol: r._id,
+      n: r.n,
+      wins: r.wins,
+      winRate: r.n ? r.wins / r.n : 0,
+      sumR: r.sumR,
+      net: r.net,
+    }));
+  }
+
   /** Bars around one trade, from the engine's cache, for its chart. */
   async tradeBars(userId: string, id: string, tradeId: string) {
     const run = await this.get(userId, id);

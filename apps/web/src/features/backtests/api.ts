@@ -1,6 +1,7 @@
 import { request } from '../../lib/api';
 import type {
-  Bars, CachedSeries, ImportJob, Run, StartRunInput, StartSweepInput, Strategy, Sweep, Trade,
+  Bars, CachedSeries, ImportJob, PairRow, Run, StartRunInput, StartSweepInput, Strategy, Sweep,
+  Trade,
 } from './types';
 
 export const backtestApi = {
@@ -48,6 +49,8 @@ export const backtestApi = {
     request<Run>(`/backtest/runs/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived }) }),
 
   trades: (id: string) => request<Trade[]>(`/backtest/runs/${id}/trades`),
+
+  byPair: (id: string) => request<PairRow[]>(`/backtest/runs/${id}/by-pair`),
 
   tradeBars: (id: string, tradeId: string) =>
     request<Bars>(`/backtest/runs/${id}/trades/${tradeId}/bars`),

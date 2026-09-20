@@ -1,5 +1,5 @@
 import type { Run, Sweep } from '../types';
-import { bestRun } from '../group';
+import { spread } from '../group';
 import { fmtDate, fmtMoney, fmtR, moneyClass } from '../fmt';
 import { Chevron } from './icons';
 
@@ -17,8 +17,10 @@ export function SweepRow({ sweep, runs, open, picked, some, onToggle, onPick, on
   onPick: () => void;
   onOpenSweep: () => void;
 }) {
-  const best = bestRun(runs);
-  const m = best?.metrics;
+  const net = spread(runs, (r) => r.metrics!.netProfit);
+  // No losing trades is an unbounded profit factor; it sorts as the highest.
+  const pf = spread(runs, (r) => r.metrics!.profitFactor ?? Infinity);
+  const exp = spread(runs, (r) => r.metrics!.expectancyR);
   const live = runs.filter((r) => r.status === 'queued' || r.status === 'running');
   const only = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
   return (
@@ -36,7 +38,7 @@ export function SweepRow({ sweep, runs, open, picked, some, onToggle, onPick, on
           Sweep · {sweep.detector} <span className="dimmer mono-sm">v{sweep.detectorVersion ?? '?'}</span>
         </div>
         <div className="t-sub">{sweep.timeframes[0]} · {sweep.symbols.length} pair{sweep.symbols.length === 1 ? '' : 's'}
-          {' · '}{fmtDate(sweep.createdAt)} · best of {runs.length} shown</div>
+          {' · '}{fmtDate(sweep.createdAt)} · range across {runs.length} runs</div>
       </td>
       <td className="mono-sm dim">{fmtDate(sweep.fromDate)} – {fmtDate(sweep.toDate)}</td>
       <td>
@@ -45,9 +47,9 @@ export function SweepRow({ sweep, runs, open, picked, some, onToggle, onPick, on
           : <span className="tag">completed</span>}
       </td>
       <td className="r mono-sm dim">{runs.length} runs</td>
-      <td className={`r mono-sm ${moneyClass(m?.netProfit)}`}>{m ? fmtMoney(m.netProfit) : '—'}</td>
-      <td className="r mono-sm">{m ? (m.profitFactor == null ? '∞' : m.profitFactor.toFixed(2)) : '—'}</td>
-      <td className={`r mono-sm ${moneyClass(m?.expectancyR)}`}>{m ? fmtR(m.expectancyR) : '—'}</td>
+      <td className="r mono-sm"><Range of={net} show={fmtMoney} tint /></td>
+      <td className="r mono-sm"><Range of={pf} show={(v) => (Number.isFinite(v) ? v.toFixed(2) : '∞')} /></td>
+      <td className="r mono-sm"><Range of={exp} show={fmtR} tint /></td>
       <td className="r">
         <div className="row-actions">
           <button className="btn3" onClick={only(onOpenSweep)} title="Compare every setting's effect on one page">
@@ -57,4 +59,13 @@ export function SweepRow({ sweep, runs, open, picked, some, onToggle, onPick, on
       </td>
     </tr>
   );
+}
+
+/** "low to high", each end coloured on its own; one value if they coincide. */
+function Range({ of, show, tint }: { of: [number, number] | null; show: (v: number) => string; tint?: boolean }) {
+  if (!of) return <>—</>;
+  const end = (v: number) => <span className={tint ? moneyClass(v) : undefined}>{show(v)}</span>;
+  return of[0] === of[1]
+    ? end(of[0])
+    : <>{end(of[0])} <span className="dimmer">to</span> {end(of[1])}</>;
 }

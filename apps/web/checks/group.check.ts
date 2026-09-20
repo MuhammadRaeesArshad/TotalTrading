@@ -3,7 +3,7 @@
 //   node apps/web/checks/group.check.ts
 
 import assert from 'node:assert/strict';
-import { bestRun, groupBySweep } from '../src/features/backtests/group.ts';
+import { groupBySweep, spread } from '../src/features/backtests/group.ts';
 import type { Run, Sweep } from '../src/features/backtests/types.ts';
 
 const run = (id: string, net: number | null): Run =>
@@ -30,8 +30,13 @@ assert.equal(desc(groupBySweep(runs, [sweep('N', 'a', 'b', 'a'), sweep('O', 'a',
 assert.equal(desc(groupBySweep(runs, [sweep('S', null, null)])), 'a b c d');
 assert.equal(desc(groupBySweep(runs, [])), 'a b c d');
 
-// Best run by net; runs with no result never win.
-assert.equal(bestRun([run('a', -5), run('b', 10), run('c', null)])?._id, 'b');
-assert.equal(bestRun([run('a', null)]), null);
+// Range across the runs; a run with no result never sets an end.
+const net = (r: Run) => r.metrics!.netProfit;
+assert.deepEqual(spread([run('a', -5), run('b', 10), run('c', null), run('d', 3)], net), [-5, 10]);
+assert.equal(spread([run('a', null)], net), null);
+assert.deepEqual(spread([run('a', 2)], net), [2, 2]);
+
+// An unbounded value (no losing trades) is still a value, not "no result".
+assert.deepEqual(spread([run('a', 1)], () => Infinity), [Infinity, Infinity]);
 
 console.log('group: ok');

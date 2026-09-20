@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { ApiError } from '../lib/api';
@@ -38,6 +38,10 @@ export function ExplorePage() {
   const [result, setResult] = useState<ExploreResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /// Only the newest request may write to the screen. Changing the scope and
+  /// the grouping quickly fires several, and without this a slow failure
+  /// lands on top of a fast success and shows an error about nothing.
+  const latest = useRef(0);
 
   const scope = params.get('scope') ?? '';
   const by = (params.get('by')?.split(',').filter(Boolean) ?? ['pair']) as Dimension[];
@@ -74,6 +78,7 @@ export function ExplorePage() {
 
   const load = useCallback(async () => {
     if (!scope || !by.length) return;
+    const mine = ++latest.current;
     setBusy(true);
     setError(null);
     try {
@@ -88,11 +93,14 @@ export function ExplorePage() {
           ? { sweepId: scope.slice(6) }
           : { runIds: runs.filter((r) => r.status === 'completed').map((r) => r._id) }),
       };
-      setResult(await backtestApi.explore(query));
+      const next = await backtestApi.explore(query);
+      if (mine === latest.current) setResult(next);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not slice these trades.');
+      if (mine === latest.current) {
+        setError(e instanceof ApiError ? e.message : 'Could not slice these trades.');
+      }
     } finally {
-      setBusy(false);
+      if (mine === latest.current) setBusy(false);
     }
   }, [scope, by.join(','), minTrades, sessions.join(','), side, from, to, runs]);
 

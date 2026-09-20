@@ -73,6 +73,35 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       }
     }
     if (unfinished.length) this.log.log(`Resumed ${unfinished.length} unfinished run(s).`);
+
+    await this.pruneOrphanedSweeps();
+  }
+
+  /**
+   * Drops sweeps whose runs are all gone.
+   *
+   * Deleting a run detaches it from its sweep, but runs deleted before that
+   * existed left sweeps pointing at nothing — shells that still offered
+   * themselves in every picker and answered with zero trades. This clears them
+   * once, and costs one query per boot afterwards.
+   */
+  private async pruneOrphanedSweeps() {
+    const sweeps = await this.sweeps.find({}).select({ _id: 1, cells: 1 }).lean();
+    if (!sweeps.length) return;
+
+    const referenced = sweeps.flatMap((s) => s.cells.map((c) => c.runId).filter(Boolean));
+    const alive = new Set(
+      (await this.backtests.find({ _id: { $in: referenced } }).select({ _id: 1 }).lean())
+        .map((r) => String(r._id)),
+    );
+
+    const dead = sweeps
+      .filter((s) => !s.cells.some((c) => c.runId && alive.has(String(c.runId))))
+      .map((s) => s._id);
+    if (!dead.length) return;
+
+    await this.sweeps.deleteMany({ _id: { $in: dead } });
+    this.log.log(`Removed ${dead.length} sweep(s) whose runs no longer exist.`);
   }
 
   onModuleDestroy() {
@@ -507,11 +536,38 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     return this.engine.bars(trade.symbol, timeframe, fromTs, toTs);
   }
 
+  /**
+   * Deletes a run, its trades, and its place in any sweep.
+   *
+   * A sweep holds only the plan — which setting each cell moved and where to.
+   * Its answers are the runs. Leaving the sweep behind when they go produces a
+   * shell that still offers itself in every picker and returns nothing, which
+   * is exactly what happened when the user cleared their backtests.
+   */
   async remove(userId: string, id: string) {
     const run = await this.get(userId, id);
     this.stop(String(run._id));
     await this.trades.deleteMany({ backtestId: run._id, source: TradeSource.BACKTEST });
     await this.backtests.deleteOne({ _id: run._id });
+
+    // Detach it from any sweep, so a cell that lost its answer is unanswered
+    // rather than pointing at nothing — and can be re-run.
+    await this.sweeps.updateMany(
+      { userId: new Types.ObjectId(userId), 'cells.runId': run._id },
+      { $set: { 'cells.$[c].runId': null } },
+      { arrayFilters: [{ 'c.runId': run._id }] },
+    );
+
+    // A sweep with no answers left is a plan and nothing else. Deleting the
+    // last run of one is a deliberate act, and keeping the husk helps nobody.
+    const emptied = await this.sweeps.deleteMany({
+      userId: new Types.ObjectId(userId),
+      cells: { $not: { $elemMatch: { runId: { $ne: null } } } },
+    });
+    if (emptied.deletedCount) {
+      this.log.log(`Removed ${emptied.deletedCount} sweep(s) left with no runs.`);
+    }
+
     return { deleted: id };
   }
 

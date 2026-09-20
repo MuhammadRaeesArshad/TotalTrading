@@ -47,11 +47,22 @@ export function groupBySweep(runs: Run[], sweeps: Sweep[]): Row[] {
   return rows;
 }
 
-/** The run with the highest net profit — what a collapsed sweep shows. */
-export function bestRun(runs: Run[]): Run | null {
-  let best: Run | null = null;
+/**
+ * Lowest and highest of one number across a sweep's runs; null if none has a
+ * result. A collapsed sweep shows this rather than its best run: the best of
+ * forty settings is the one that got lucky, and shown alone it reads as the
+ * strategy's result.
+ */
+export function spread(runs: Run[], pick: (r: Run) => number | null): [number, number] | null {
+  let lo = Infinity;
+  let hi = -Infinity;
+  let any = false;
   for (const r of runs) {
-    if (r.metrics && (!best?.metrics || r.metrics.netProfit > best.metrics.netProfit)) best = r;
+    const v = r.metrics ? pick(r) : null;
+    if (v === null || Number.isNaN(v)) continue;
+    any = true;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
-  return best;
+  return any ? [lo, hi] : null;
 }

@@ -11,6 +11,10 @@ fail=0
 step() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 check() { if [ "$1" -ne 0 ]; then echo "FAILED: $2"; fail=1; fi; }
 
+step "architecture rules"
+bash scripts/checks/rules.sh
+check $? "architecture rules"
+
 step "engine (Rust)"
 if docker info >/dev/null 2>&1; then
   docker run --rm -v "//$(pwd | sed 's|^/||; s|^\([a-zA-Z]\):|\1|')/services/engine://app" \

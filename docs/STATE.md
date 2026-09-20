@@ -75,6 +75,12 @@ cd services/mt5-connector && .venv/Scripts/python.exe -m uvicorn app.main:app --
 
 ## Verifying before you claim anything
 
-`bash scripts/verify.sh` — 106 checks: 77 Rust, 16 gateway, 13 ai-analysis, the
-web build and its stats self-check. A regression test must be shown to fail
-against the old code before it counts (`CLAUDE.md`).
+`bash scripts/verify.sh` — the architecture rules, 78 Rust tests, 16 gateway,
+13 ai-analysis, the web build and its stats self-check. A regression test must
+be shown to fail against the old code before it counts (`CLAUDE.md`).
+
+`scripts/checks/rules.sh` is the first step and the one worth knowing about: it
+greps for the rules that a tired session breaks quietly — a second `Detector`,
+`MetaTrader5` outside the connector, a second Mongo writer, `order_send`
+anywhere, the engine gaining a way to reach `ai-analysis`. Each case has been
+shown to fail when the rule is actually broken.

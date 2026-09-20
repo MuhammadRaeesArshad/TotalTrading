@@ -65,10 +65,18 @@ export function ExplorePage() {
       .then(([s, r]) => {
         setSweeps(s);
         setRuns(r);
-        // Land on something rather than an empty screen.
-        if (!params.get('scope')) {
+
+        // The scope lives in the URL, so a link can outlive what it points at
+        // — a sweep deleted since, or one belonging to a different machine.
+        // A `<select>` whose value matches no option silently displays the
+        // first one, so a dead scope looked like a valid choice while every
+        // request asked for a sweep that was gone.
+        const current = params.get('scope') ?? '';
+        const known = current === 'all' || s.some((x) => `sweep:${x._id}` === current);
+        if (!current || !known) {
           const first = s[0] ? `sweep:${s[0]._id}` : r.length ? 'all' : '';
           if (first) set({ scope: first });
+          else set({ scope: '' });
         }
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load what there is to explore.'));
@@ -78,6 +86,10 @@ export function ExplorePage() {
 
   const load = useCallback(async () => {
     if (!scope || !by.length) return;
+    // A sweep that is not in the list is one that is gone; asking for it only
+    // produces an error about something the user did not choose.
+    if (scope.startsWith('sweep:') && sweeps.length
+      && !sweeps.some((s) => `sweep:${s._id}` === scope)) return;
     const mine = ++latest.current;
     setBusy(true);
     setError(null);
@@ -102,7 +114,7 @@ export function ExplorePage() {
     } finally {
       if (mine === latest.current) setBusy(false);
     }
-  }, [scope, by.join(','), minTrades, sessions.join(','), side, from, to, runs]);
+  }, [scope, by.join(','), minTrades, sessions.join(','), side, from, to, runs, sweeps]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -118,6 +130,10 @@ export function ExplorePage() {
     if (next.length && next.length <= 3) set({ by: next.join(',') });
   };
 
+  // Whether the selected scope is one the picker actually offers. Until the
+  // lists arrive nothing is known, so nothing is claimed.
+  const knownScope = scope === 'all' || sweeps.some((s) => `sweep:${s._id}` === scope);
+
   const best = rows[0];
   const worst = rows[rows.length - 1];
 
@@ -132,8 +148,9 @@ export function ExplorePage() {
 
       <div className="filterbar">
         <div className="filterbar-row">
-          <select className="sel" aria-label="Which runs" value={scope}
+          <select className="sel" aria-label="Which runs" value={knownScope ? scope : ''}
             onChange={(e) => set({ scope: e.target.value })}>
+            {!knownScope && <option value="">Choose what to explore…</option>}
             {sweeps.map((s) => (
               <option key={s._id} value={`sweep:${s._id}`}>
                 {s.label} · {s.cells.length} runs

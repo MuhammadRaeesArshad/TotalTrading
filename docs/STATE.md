@@ -8,6 +8,8 @@ a stale handoff is worse than none.
 
 - **Auth, MT5 accounts, history import.** Imports run as background jobs with
   live progress, and are incremental — only bars the cache lacks are fetched.
+  Cached as of 20 Sep 2026: 28 pairs × M15, M30, H1, H4, D1 — 140 series, so
+  both strategies have everything they read.
 - **Two strategies.** `smc_ob` (single timeframe, a test of the pipeline) and
   `smc_mtf` (the user's own: H4+H1 direction, M15/M30 break of structure, order
   block entry). Each declares its own description, timeframes and settings;
@@ -31,6 +33,19 @@ a stale handoff is worse than none.
   needs npm workspaces, which changes every service Dockerfile.
 - **Per-strategy Verdict criteria.** Thresholds are defaults in
   `apps/web/src/features/backtests/stats.ts`, not yet saved per strategy.
+
+## Thin spots
+
+Known, and none of them are covered by a test:
+
+- **The `capital` field was hand-typed into five files across three languages**
+  — engine, gateway DTO, gateway schema, gateway client, web types. Nothing
+  checks that they agree. This is exactly the drift `packages/contracts` exists
+  to stop, and the argument for building it just got stronger.
+- **Per-pair capital has never been run through the real UI**, only through the
+  engine's own tests.
+- **Verdict thresholds are global**, not per strategy, so `smc_mtf` is judged
+  against criteria written for `smc_ob`.
 
 ## Open decisions
 

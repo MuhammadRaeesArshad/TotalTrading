@@ -171,13 +171,19 @@ export class AccountsService {
     return account;
   }
 
+  /**
+   * `onlyForex` means "the instruments this system knows how to price", which
+   * now includes gold — it is not a currency pair, but the engine has a point
+   * size for it and it is asked for by name. A broker's thousands of CFDs and
+   * indices stay out, because nothing here prices them.
+   */
   listInstruments(accountId: string, onlyForex = false) {
     const filter: Record<string, unknown> = {
       accountId: new Types.ObjectId(accountId),
     };
     if (onlyForex) {
       filter.instrumentClass = {
-        $in: [InstrumentClass.MAJOR, InstrumentClass.MINOR],
+        $in: [InstrumentClass.MAJOR, InstrumentClass.MINOR, InstrumentClass.METAL],
       };
     }
     return this.instruments.find(filter).sort({ symbol: 1 }).exec();

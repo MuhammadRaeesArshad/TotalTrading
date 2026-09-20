@@ -349,3 +349,19 @@ table.tl tbody tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--fg);}
 .pairchip:hover:not(:disabled){border-color:var(--line-strong);color:var(--fg);}
 .pairchip.on{background:var(--fg);border-color:var(--fg);color:var(--bg);font-weight:600;}
 .pairchip:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Row actions sit on the right of a table row. Kept quiet until the row is
+   hovered or something in it has focus: a delete button shouting from every
+   row makes a list of results look like a list of hazards. */
+.row-actions{display:inline-flex;gap:2px;justify-content:flex-end;opacity:0;transition:opacity .12s;}
+tr:hover .row-actions,.row-actions:focus-within{opacity:1;}
+@media (hover:none){.row-actions{opacity:1;}}
+
+/* Destructive, and it looks it — but only once you are on it, so the colour
+   means "this one is different" rather than being ambient noise. */
+.btn3.danger:hover,.btn3.danger:focus-visible{background:var(--loss-dim);color:var(--loss);}
+.btn.danger{background:var(--loss);border-color:var(--loss);color:#fff;}
+.btn.danger:hover{filter:brightness(1.08);}
+
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;}

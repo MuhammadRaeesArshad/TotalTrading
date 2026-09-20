@@ -1,5 +1,6 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -7,7 +8,7 @@ import type { AuthedUser } from '../auth/jwt.strategy';
 import { AccountsService } from '../accounts/accounts.service';
 import { BacktestClient } from './backtest.client';
 import { BacktestService } from './backtest.service';
-import { ImportBarsDto, StartBacktestDto } from './dto';
+import { ArchiveRunDto, ImportBarsDto, StartBacktestDto } from './dto';
 
 /** A year of M5 is ~75k bars per pair; this keeps one request bounded. */
 const MAX_SERIES_PER_IMPORT = 200;
@@ -44,9 +45,19 @@ export class BacktestController {
     return this.runs.start(user.id, dto);
   }
 
+  /** `?archived=true` returns the put-aside list instead of the working one. */
   @Get('runs')
-  listRuns(@CurrentUser() user: AuthedUser) {
-    return this.runs.list(user.id);
+  listRuns(@CurrentUser() user: AuthedUser, @Query('archived') archived?: string) {
+    return this.runs.list(user.id, archived === 'true');
+  }
+
+  @Patch('runs/:id/archive')
+  archiveRun(
+    @CurrentUser() user: AuthedUser,
+    @Param('id') id: string,
+    @Body() dto: ArchiveRunDto,
+  ) {
+    return this.runs.setArchived(user.id, id, dto.archived);
   }
 
   @Get('runs/:id')

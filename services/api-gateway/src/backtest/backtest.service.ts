@@ -123,12 +123,22 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     return this.get(userId, String(doc._id));
   }
 
-  list(userId: string) {
+  /** `archived` picks which shelf: the working list, or the one put aside. */
+  list(userId: string, archived = false) {
     return this.backtests
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({ userId: new Types.ObjectId(userId), archived: archived ? true : { $ne: true } })
       .select({ equityCurve: 0, rulesSnapshot: 0 })
       .sort({ createdAt: -1 })
       .lean();
+  }
+
+  /** Moves a run between the two lists. Nothing is lost either way. */
+  async setArchived(userId: string, id: string, archived: boolean) {
+    const run = await this.backtests
+      .findOneAndUpdate(this.owned(userId, id), { archived }, { new: true })
+      .lean();
+    if (!run) throw new NotFoundException('No backtest with that id.');
+    return run;
   }
 
   async get(userId: string, id: string) {

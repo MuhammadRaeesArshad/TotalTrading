@@ -113,6 +113,11 @@ export class Backtest {
   @Prop({ type: String, enum: BacktestStatus, default: BacktestStatus.QUEUED, index: true })
   status: BacktestStatus;
 
+  /** Archived runs stay on file and keep their trades; they are just out of
+   *  the way. Deleting is the other option, and it is not reversible. */
+  @Prop({ type: Boolean, default: false, index: true })
+  archived: boolean;
+
   @Prop({ default: 0 })
   progressPct: number;
 

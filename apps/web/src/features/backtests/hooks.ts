@@ -53,7 +53,7 @@ export function useTrades(run: Run | null) {
 }
 
 /** All runs, polled every two seconds while any is still running. */
-export function useRuns() {
+export function useRuns(archived = false) {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number>();
@@ -61,14 +61,14 @@ export function useRuns() {
   const load = useCallback(async () => {
     window.clearTimeout(timer.current);
     try {
-      const list = await backtestApi.runs();
+      const list = await backtestApi.runs(archived);
       setRuns(list);
       setError(null);
       if (list.some(isLive)) timer.current = window.setTimeout(load, 2_000);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not load backtests.');
     }
-  }, []);
+  }, [archived]);
 
   useEffect(() => {
     load();

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayNotEmpty, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString,
+  ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsObject,
+  IsOptional, IsString,
   Matches, Max, Min, ValidateNested,
 } from 'class-validator';
 import { Timeframe } from '../schemas/strategy.schema';
@@ -97,4 +98,10 @@ export class StartBacktestDto {
   @IsOptional()
   @IsObject()
   params?: Record<string, unknown>;
+}
+
+export class ArchiveRunDto {
+  /** True puts the run aside, false brings it back. */
+  @IsBoolean()
+  archived: boolean;
 }

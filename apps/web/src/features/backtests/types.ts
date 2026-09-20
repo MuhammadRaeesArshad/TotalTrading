@@ -58,6 +58,8 @@ export interface Run {
   riskPercentPerTrade: number;
   /** `shared`: one account for every pair. `per_symbol`: that balance each. */
   capital?: CapitalMode;
+  /** Put aside rather than deleted. Absent on runs stored before archiving. */
+  archived?: boolean;
   intrabarPolicy: IntrabarPolicy;
   status: RunStatus;
   progressPct: number;

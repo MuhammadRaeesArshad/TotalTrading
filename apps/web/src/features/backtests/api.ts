@@ -25,7 +25,7 @@ export const backtestApi = {
 
   importStatus: (id: string) => request<ImportJob>(`/backtest/imports/${id}`),
 
-  runs: () => request<Run[]>('/backtest/runs'),
+  runs: (archived = false) => request<Run[]>(`/backtest/runs${archived ? '?archived=true' : ''}`),
 
   run: (id: string) => request<Run>(`/backtest/runs/${id}`),
 
@@ -33,6 +33,9 @@ export const backtestApi = {
     request<Run>('/backtest/runs', { method: 'POST', body: JSON.stringify(input) }),
 
   remove: (id: string) => request<{ deleted: string }>(`/backtest/runs/${id}`, { method: 'DELETE' }),
+
+  setArchived: (id: string, archived: boolean) =>
+    request<Run>(`/backtest/runs/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived }) }),
 
   trades: (id: string) => request<Trade[]>(`/backtest/runs/${id}/trades`),
 

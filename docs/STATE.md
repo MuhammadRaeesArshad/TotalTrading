@@ -27,6 +27,9 @@ a stale handoff is worse than none.
 - **`smc_mtf` v1 results are dead.** v2 changed how H4 and H1 decide
   direction, from the last break of structure to the EMA slope. Stored runs
   keep the version that produced them; do not compare across them (rule 6).
+- **Runs can be archived or deleted.** Two lists, Current and Archived;
+  archiving only moves a run aside and keeps every trade. Deleting removes the
+  run and its trades for good and asks first.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and

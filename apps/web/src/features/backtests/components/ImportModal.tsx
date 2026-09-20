@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../../lib/api';
 import type { Instrument, Mt5Account } from '../../../lib/types';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
+import { PairPicker } from './PairPicker';
 
 const TIMEFRAMES = ['M15', 'M30', 'H1', 'H4', 'D1'];
 
@@ -41,12 +42,6 @@ export function ImportModal({ open, onClose, onStarted }: { open: boolean; onClo
       })
       .catch(() => setInstruments([]));
   }, [accountId]);
-
-  const byClass = useMemo(() => {
-    const out: Record<string, Instrument[]> = { major: [], minor: [] };
-    for (const i of instruments) if (out[i.instrumentClass]) out[i.instrumentClass].push(i);
-    return out;
-  }, [instruments]);
 
   const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const years = Array.from({ length: 16 }, (_, i) => new Date().getUTCFullYear() - i);
@@ -95,31 +90,8 @@ export function ImportModal({ open, onClose, onStarted }: { open: boolean; onClo
             </select>
           </div>
 
-          <div className="f">
-            <label>Pairs · {symbols.length} selected</label>
-            {(['major', 'minor'] as const).map((cls) => (
-              <div key={cls}>
-                <div className="spread" style={{ margin: '6px 0 4px' }}>
-                  <span className="dim" style={{ fontSize: 11.5 }}>{cls === 'major' ? 'Majors' : 'Minors'}</span>
-                  <button type="button" className="btn3" onClick={() => {
-                    const all = byClass[cls].map((i) => i.symbol);
-                    const has = all.every((s) => symbols.includes(s));
-                    setSymbols(has ? symbols.filter((s) => !all.includes(s)) : [...new Set([...symbols, ...all])]);
-                  }}>toggle all</button>
-                </div>
-                <div className="inline" style={{ gap: 6 }}>
-                  {byClass[cls].map((i) => (
-                    <label key={i.symbol} className="tag" style={{ cursor: 'pointer', ...(symbols.includes(i.symbol) ? { color: 'var(--fg)', borderColor: 'var(--line-strong)', background: 'var(--surface-3)' } : {}) }}>
-                      <input type="checkbox" checked={symbols.includes(i.symbol)} onChange={() => setSymbols(toggle(symbols, i.symbol))}
-                        style={{ margin: 0 }} disabled={busy} />
-                      {i.symbol}
-                    </label>
-                  ))}
-                  {byClass[cls].length === 0 && <span className="dimmer" style={{ fontSize: 12 }}>None found. Reconnect the account to refresh its symbols.</span>}
-                </div>
-              </div>
-            ))}
-          </div>
+          <PairPicker available={instruments.map((i) => i.symbol)} selected={symbols}
+            onChange={setSymbols} disabled={busy} />
 
           <div className="f2">
             <div className="f">

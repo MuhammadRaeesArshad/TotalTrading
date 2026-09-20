@@ -3,6 +3,7 @@ import { ApiError } from '../../../lib/api';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
 import type { CachedSeries, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
+import { PairPicker } from './PairPicker';
 
 const toDay = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
 const fromDay = (d: string) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000);
@@ -129,22 +130,7 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
           )}
         </div>
 
-        <div className="f">
-          <label>Pairs · {symbols.length} of {forTf.length}</label>
-          <div className="inline" style={{ gap: 6 }}>
-            {forTf.map((s) => {
-              const on = symbols.includes(s.symbol);
-              return (
-                <label key={s.symbol} className="tag" style={{ cursor: 'pointer', ...(on ? { color: 'var(--fg)', borderColor: 'var(--line-strong)', background: 'var(--surface-3)' } : {}) }}>
-                  <input type="checkbox" checked={on} style={{ margin: 0 }}
-                    onChange={() => setSymbols(on ? symbols.filter((x) => x !== s.symbol) : [...symbols, s.symbol])} />
-                  {s.symbol}
-                </label>
-              );
-            })}
-            {forTf.length === 0 && <span className="dimmer" style={{ fontSize: 12 }}>Nothing cached on {timeframe || 'this timeframe'}.</span>}
-          </div>
-        </div>
+        <PairPicker available={forTf.map((s) => s.symbol)} selected={symbols} onChange={setSymbols} />
 
         <div className="f2">
           <div className="f"><label htmlFor="nr-from">From</label><input id="nr-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
@@ -178,6 +164,15 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
             <span className="hint">At {risk}% each, up to {(risk * maxOpen).toFixed(1)}% exposed on one pair.</span>
           </div>
         </div>
+
+        {risk * maxOpen > 5 && (
+          <div className="alert err" style={{ margin: 0 }}>
+            {(risk * maxOpen).toFixed(1)}% of the account on one pair, and every pair trades the same
+            account. At this size a normal losing streak wipes it out, and once the balance is gone the
+            rest of the run is skipped rather than traded — the result then says more about the sizing
+            than the strategy. Around 1% per trade is the usual choice.
+          </div>
+        )}
 
         <div className="f">
           <label htmlFor="nr-ib">When stop and target are both inside one bar</label>

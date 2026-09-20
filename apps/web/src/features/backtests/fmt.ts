@@ -21,8 +21,16 @@ export const money0 = (v: number) =>
   `$${Math.round(v).toLocaleString('en-US')}`;
 
 /** Class for money only — green and red never mean anything else. */
+/**
+ * Colour by what is shown, not by the raw number.
+ *
+ * An expectancy of 0.0004 displays as "+0.00R"; colouring that green made a
+ * run that lost $3,655 look like it broke even in the black. Anything that
+ * rounds to zero at the precision on screen is neutral, and half a cent is
+ * neutral for money too.
+ */
 export const moneyClass = (v: number | null | undefined) =>
-  v == null || v === 0 ? '' : v > 0 ? 'gain' : 'loss';
+  v == null || Math.abs(v) < 0.005 ? '' : v > 0 ? 'gain' : 'loss';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const MONTHS = MON;

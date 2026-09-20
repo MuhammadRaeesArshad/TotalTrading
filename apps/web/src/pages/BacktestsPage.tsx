@@ -10,8 +10,11 @@ import { ImportModal } from '../features/backtests/components/ImportModal';
 import { NewRunModal } from '../features/backtests/components/NewRunModal';
 import type { Run } from '../features/backtests/types';
 import { PairBreakdown } from '../features/backtests/components/PairBreakdown';
+import { ArchiveIcon, Chevron, RestoreIcon, TrashIcon } from '../features/backtests/components/icons';
 import { StatusTag } from '../features/backtests/components/StatusTag';
 import { fmtDate, fmtMoney, fmtR, moneyClass } from '../features/backtests/fmt';
+import { nextSort, sortRuns } from '../features/backtests/sortRuns';
+import type { Sort, SortKey } from '../features/backtests/sortRuns';
 
 type Shelf = 'current' | 'archived';
 
@@ -31,6 +34,7 @@ export function BacktestsPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<Sort | null>(null);
   /// Rows opened to show how the result splits across pairs.
   const [opened, setOpened] = useState<Set<string>>(new Set());
   /// The row a range selection extends from — the last one clicked plainly.
@@ -46,7 +50,7 @@ export function BacktestsPage() {
     anchor.current = null;
   }, [shelf]);
 
-  const shown = runs ?? [];
+  const shown = sortRuns(runs ?? [], sort);
   const allPicked = shown.length > 0 && shown.every((r) => picked.has(r._id));
   const somePicked = picked.size > 0 && !allPicked;
   const chosen = shown.filter((r) => picked.has(r._id));
@@ -203,13 +207,18 @@ export function BacktestsPage() {
                         anchor.current = null;
                       }} />
                   </th>
-                  <th>Run</th><th>Window</th><th>Status</th>
-                  <th className="r">Trades</th><th className="r">Net</th><th className="r">Profit factor</th><th className="r">Expectancy</th>
+                  <SortTh k="run" sort={sort} onSort={setSort}>Run</SortTh>
+                  <SortTh k="window" sort={sort} onSort={setSort}>Window</SortTh>
+                  <SortTh k="status" sort={sort} onSort={setSort}>Status</SortTh>
+                  <SortTh k="trades" sort={sort} onSort={setSort} right>Trades</SortTh>
+                  <SortTh k="net" sort={sort} onSort={setSort} right>Net</SortTh>
+                  <SortTh k="pf" sort={sort} onSort={setSort} right>Profit factor</SortTh>
+                  <SortTh k="expectancy" sort={sort} onSort={setSort} right>Expectancy</SortTh>
                   <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {runs.map((r) => (
+                {shown.map((r) => (
                   <RunRow key={r._id} run={r} archived={shelf === 'archived'}
                     picked={picked.has(r._id)}
                     expanded={opened.has(r._id)}
@@ -272,6 +281,24 @@ export function BacktestsPage() {
   );
 }
 
+function SortTh({ k, sort, onSort, right, children }: {
+  k: SortKey;
+  sort: Sort | null;
+  onSort: (s: Sort | null) => void;
+  right?: boolean;
+  children: React.ReactNode;
+}) {
+  const on = sort?.key === k;
+  return (
+    <th className={right ? 'r' : undefined} aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className="sortbtn" onClick={() => onSort(nextSort(sort, k))}>
+        {children}
+        <span aria-hidden className="arrow">{on ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+      </button>
+    </th>
+  );
+}
+
 function RunRow({
   run, archived, picked, expanded, onExpand, onPick, onOpen, onArchive, onDelete,
 }: {
@@ -300,7 +327,13 @@ function RunRow({
           onChange={() => undefined} />
       </td>
       <td>
-        <div className="t-name">{run.detector} <span className="dimmer mono-sm">v{run.detectorVersion ?? '?'}</span></div>
+        <div className="t-name">
+          <button className="disclose" onClick={only(onExpand)} aria-expanded={expanded}
+            aria-label={expanded ? `Hide ${run.detector}'s pairs` : `Show ${run.detector}'s pairs`}>
+            <Chevron open={expanded} />
+          </button>
+          {run.detector} <span className="dimmer mono-sm">v{run.detectorVersion ?? '?'}</span>
+        </div>
         <div className="t-sub">{run.timeframes[0]} · {run.symbols.length} pair{run.symbols.length === 1 ? '' : 's'}
           {run.intrabarPolicy === 'optimistic' && ' · optimistic'}
           {run.capital === 'per_symbol' && ' · per-pair capital'}</div>
@@ -313,16 +346,14 @@ function RunRow({
       <td className={`r mono-sm ${moneyClass(m?.expectancyR)}`}>{m ? fmtR(m.expectancyR) : '—'}</td>
       <td className="r">
         <div className="row-actions">
-          <button className="btn3" onClick={only(onExpand)} aria-expanded={expanded}
-            title={expanded ? 'Hide the pair split' : 'Show how this splits across pairs'}>
-            {expanded ? 'Hide pairs' : 'Pairs'}
-          </button>
-          <button className="btn3" onClick={only(onArchive)}
+          <button className="iconbtn" onClick={only(onArchive)}
+            aria-label={archived ? 'Restore to the current list' : 'Archive, keeping every trade'}
             title={archived ? 'Move back to the current list' : 'Put aside, keeping every trade'}>
-            {archived ? 'Restore' : 'Archive'}
+            {archived ? <RestoreIcon /> : <ArchiveIcon />}
           </button>
-          <button className="btn3 danger" onClick={only(onDelete)} title="Delete this run and its trades">
-            Delete
+          <button className="iconbtn danger" onClick={only(onDelete)}
+            aria-label="Delete this run and its trades" title="Delete this run and its trades">
+            <TrashIcon />
           </button>
         </div>
       </td>
@@ -330,6 +361,10 @@ function RunRow({
     {expanded && (
       <tr className="splitrow">
         <td colSpan={9}>
+          <div className="pairsplit-head">
+            <span>Pair</span><span /><span className="r">Net R</span>
+            <span className="r">Trades</span><span className="r">Win</span><span className="r">Money</span>
+          </div>
           <PairBreakdown runId={run._id} />
         </td>
       </tr>

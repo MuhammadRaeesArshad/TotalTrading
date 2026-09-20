@@ -10,6 +10,7 @@ import {
   deployedCapital, equityPath, groupBy, rHistogram, R_BINS, sessionOf, summarize, verdict,
 } from '../src/features/backtests/stats.ts';
 import type { Run, Trade } from '../src/features/backtests/types.ts';
+import { moneyClass } from '../src/features/backtests/fmt.ts';
 
 function trade(over: Partial<Trade>): Trade {
   return {
@@ -96,4 +97,17 @@ console.log('stats.check: all assertions passed');
   assert.equal(deployedCapital({ ...base, capital: 'per_symbol' } as Run), 30_000);
   // Runs stored before the field existed were shared.
   assert.equal(deployedCapital({ ...base } as Run), 10_000);
+}
+
+// --- colour follows the printed figure ------------------------------------
+// A number that rounds to zero on screen must not be coloured as a gain: an
+// expectancy of +0.0004 shows as "+0.00R", and green there read as a winning
+// run on one that lost thousands.
+{
+  assert.equal(moneyClass(0.0004), '');
+  assert.equal(moneyClass(-0.0004), '');
+  assert.equal(moneyClass(0), '');
+  assert.equal(moneyClass(null), '');
+  assert.equal(moneyClass(0.02), 'gain');
+  assert.equal(moneyClass(-0.02), 'loss');
 }

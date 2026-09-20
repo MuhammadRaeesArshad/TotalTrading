@@ -129,6 +129,10 @@ button{font-family:inherit;}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px;}
 th{text-align:left;padding:9px 16px;color:var(--fg-3);font-weight:500;font-size:11.5px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2);}
 th.r,td.r{text-align:right;}
+.sortbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+.sortbtn:hover,.sortbtn:focus-visible,th[aria-sort=ascending] .sortbtn,th[aria-sort=descending] .sortbtn{color:var(--fg);}
+.sortbtn:focus-visible{outline:2px solid var(--fg-3);outline-offset:3px;border-radius:3px;}
+.sortbtn .arrow{font-size:8px;width:8px;}
 td{padding:11px 16px;border-bottom:1px solid var(--line);white-space:nowrap;}
 tbody tr:last-child td{border-bottom:none;}
 tbody tr:hover{background:var(--surface-2);}
@@ -353,13 +357,28 @@ table.tl tbody tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--fg);}
 /* Row actions sit on the right of a table row. Kept quiet until the row is
    hovered or something in it has focus: a delete button shouting from every
    row makes a list of results look like a list of hazards. */
-.row-actions{display:inline-flex;gap:2px;justify-content:flex-end;opacity:0;transition:opacity .12s;}
-tr:hover .row-actions,.row-actions:focus-within{opacity:1;}
-@media (hover:none){.row-actions{opacity:1;}}
+/* Always visible. Hiding these until hover kept the list calm and made the
+   feature impossible to find, which is a worse trade than a busy row. */
+.row-actions{display:inline-flex;gap:4px;justify-content:flex-end;}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;padding:0;border-radius:6px;cursor:pointer;
+  border:1px solid var(--line);background:var(--surface);color:var(--fg-2);}
+.iconbtn:hover,.iconbtn:focus-visible{border-color:var(--line-strong);
+  background:var(--surface-3);color:var(--fg);}
+.iconbtn.danger:hover,.iconbtn.danger:focus-visible{background:var(--loss-dim);
+  color:var(--loss);border-color:var(--loss-line);}
+
+/* The accordion's own control, sitting with the name it opens. Borderless so
+   the row still reads as a row, not as a toolbar. */
+.disclose{display:inline-flex;align-items:center;justify-content:center;
+  width:20px;height:20px;margin-right:4px;padding:0;border:none;border-radius:4px;
+  background:none;color:var(--fg-3);cursor:pointer;vertical-align:-4px;}
+.disclose:hover,.disclose:focus-visible{background:var(--surface-3);color:var(--fg);}
 
 /* Destructive, and it looks it — but only once you are on it, so the colour
    means "this one is different" rather than being ambient noise. */
-.btn3.danger:hover,.btn3.danger:focus-visible{background:var(--loss-dim);color:var(--loss);}
+.btn3.danger:hover,.btn3.danger:focus-visible{background:var(--loss-dim);color:var(--loss);
+  border-color:var(--loss-line);}
 .btn.danger{background:var(--loss);border-color:var(--loss);color:#fff;}
 .btn.danger:hover{filter:brightness(1.08);}
 
@@ -384,6 +403,10 @@ tr.picked .row-actions{opacity:1;}
    bar lengths compare within the run. */
 .splitrow > td{background:var(--surface-2);padding:10px 14px;}
 .pairsplit{display:flex;flex-direction:column;gap:2px;}
+/* Same grid as a row, so the panel's headings sit over their own columns. */
+.pairsplit-head{display:grid;grid-template-columns:72px 1fr 62px 44px 48px 76px;
+  gap:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--fg-3);margin-bottom:6px;}
 .pairsplit-row{display:grid;grid-template-columns:72px 1fr 62px 44px 48px 76px;
   gap:8px;align-items:center;font-size:12px;}
 .pairsplit-track{position:relative;height:12px;background:var(--surface-3);border-radius:3px;}
@@ -394,6 +417,7 @@ tr.picked .row-actions{opacity:1;}
 .pairsplit-bar.up{background:var(--gain);}
 .pairsplit-bar.down{background:var(--loss);}
 @media (max-width:760px){
-  .pairsplit-row{grid-template-columns:64px 1fr 56px 40px;}
-  .pairsplit-row > :nth-child(5),.pairsplit-row > :nth-child(6){display:none;}
+  .pairsplit-row,.pairsplit-head{grid-template-columns:64px 1fr 56px 40px;}
+  .pairsplit-row > :nth-child(5),.pairsplit-row > :nth-child(6),
+  .pairsplit-head > :nth-child(5),.pairsplit-head > :nth-child(6){display:none;}
 }

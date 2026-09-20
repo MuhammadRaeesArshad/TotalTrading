@@ -7,6 +7,9 @@ export enum InstrumentClass {
   MAJOR = 'major',
   MINOR = 'minor',
   EXOTIC = 'exotic',
+  /** Spot gold. Priced and sized unlike a currency pair — see the engine's
+   *  `default_sim_for`, which gives it its own point size. */
+  METAL = 'metal',
   OTHER = 'other',
 }
 

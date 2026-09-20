@@ -46,6 +46,20 @@ a stale handoff is worse than none.
 - **Per-strategy Verdict criteria.** Thresholds are defaults in
   `apps/web/src/features/backtests/stats.ts`, not yet saved per strategy.
 
+## XAUUSD
+
+Gold is now synced and priced: it was rejected by the gateway's pair filter
+(XAU is not a currency), and the engine would have given it a 5-decimal FX
+point size — a thousand times too small, which sizes every gold position a
+thousand times too large.
+
+**Its history still has to be imported**, and `trend_engulf` will mostly skip
+it until its pip-denominated settings are revisited: on gold a "pip" is 0.01,
+so `sl_pips` 5 is a $0.05 stop that the cost floor rejects, and
+`consolidation_pips` 100 is a $1 move that gold clears constantly. Those
+defaults were tuned for FX. Changing them per instrument changes what a rule
+means, so it needs a decision rather than a guess.
+
 ## Thin spots
 
 Known, and none of them are covered by a test:

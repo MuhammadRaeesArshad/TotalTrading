@@ -21,6 +21,8 @@ const MAJOR_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'
 const MAJOR_PAIRS = [
   'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD',
 ];
+/** Not a currency pair, but it trades like one and it is asked for by name. */
+const METALS = ['XAUUSD'];
 
 @Injectable()
 export class AccountsService {
@@ -273,6 +275,8 @@ export class AccountsService {
     const core = symbol.toUpperCase().replace(/[^A-Z]/g, '');
     if (core.length < 6) return null;
     const candidate = core.slice(0, 6);
+    if (METALS.includes(candidate)) return candidate;
+
     const base = candidate.slice(0, 3);
     const quote = candidate.slice(3, 6);
     if (!MAJOR_CURRENCIES.includes(base) || !MAJOR_CURRENCIES.includes(quote)) {
@@ -283,6 +287,7 @@ export class AccountsService {
 
   private classify(normalized: string | null): InstrumentClass {
     if (!normalized) return InstrumentClass.OTHER;
+    if (METALS.includes(normalized)) return InstrumentClass.METAL;
     if (MAJOR_PAIRS.includes(normalized)) return InstrumentClass.MAJOR;
     // Both legs are major currencies but neither side is USD — that's a cross/minor.
     return InstrumentClass.MINOR;

@@ -12,6 +12,7 @@ import { BacktestService } from './backtest.service';
     MongooseModule.forFeature([
       { name: Backtest.name, schema: BacktestSchema },
       { name: Trade.name, schema: TradeSchema },
+      { name: Sweep.name, schema: SweepSchema },
     ]),
   ],
   controllers: [BacktestController],

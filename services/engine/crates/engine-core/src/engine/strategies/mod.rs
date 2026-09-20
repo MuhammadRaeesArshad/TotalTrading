@@ -7,3 +7,4 @@
 //! [`Detector`]: crate::engine::detector::Detector
 
 pub mod smc;
+pub mod smc_mtf;

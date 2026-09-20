@@ -93,8 +93,8 @@ impl DetectorFactory for LoadFactory {
     fn name(&self) -> &str {
         "throughput-load"
     }
-    fn build(&self) -> Box<dyn Detector> {
-        Box::<LoadDetector>::default()
+    fn build(&self, _params: &serde_json::Value) -> Result<Box<dyn Detector>, engine_core::CoreError> {
+        Ok(Box::<LoadDetector>::default())
     }
 }
 
@@ -176,6 +176,7 @@ fn main() {
     };
     let request = RunRequest {
         detector: "throughput-load".into(),
+        params: serde_json::Value::Null,
         from_ts: i64::MIN,
         to_ts: i64::MAX,
         sim: sim.clone(),

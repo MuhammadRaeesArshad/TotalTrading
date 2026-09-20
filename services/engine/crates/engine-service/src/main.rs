@@ -30,6 +30,7 @@ use axum::{Json, Router};
 use engine_core::engine::detector::DetectorRegistry;
 use engine_core::engine::runner::{run, RunRequest, ScanTask};
 use engine_core::engine::strategies::smc::SmcFactory;
+use engine_core::engine::strategies::smc_mtf::MtfFactory;
 use engine_core::engine::sim::IntrabarPolicy;
 use engine_core::store::{cache_path, Bars};
 use engine_core::{CoreError, SimConfig, Timeframe, ENGINE_VERSION};
@@ -58,6 +59,7 @@ struct AppState {
 fn build_registry() -> DetectorRegistry {
     let mut registry = DetectorRegistry::new();
     registry.register(Box::new(SmcFactory::default()));
+    registry.register(Box::new(MtfFactory::default()));
     registry
 }
 
@@ -144,12 +146,29 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn detectors(State(state): State<AppState>) -> impl IntoResponse {
     let names = state.registry.names();
+    // Everything a settings form needs: what the strategy does, what it can be
+    // tuned with, and the timeframes it reads.
+    let strategies: Vec<serde_json::Value> = names
+        .iter()
+        .filter_map(|n| state.registry.get(n).ok().map(|f| {
+            let (base, higher) = f.timeframes();
+            json!({
+                "name": f.name(),
+                "version": f.version(),
+                "description": f.description(),
+                "timeframe": base,
+                "higher_timeframes": higher,
+                "params": f.params_schema(),
+            })
+        }))
+        .collect();
     let versions: serde_json::Map<String, serde_json::Value> = names
         .iter()
         .filter_map(|n| state.registry.get(n).ok().map(|f| (n.to_string(), json!(f.version()))))
         .collect();
     Json(json!({
         "detectors": names,
+        "strategies": strategies,
         "versions": versions,
         "detail": if names.is_empty() {
             Some("No detector is registered. The strategy rules are still being defined.")
@@ -208,10 +227,13 @@ async fn start_run(
     }
 
     // Fail before queueing rather than after: a run that cannot start should
-    // say so in the response to the request that asked for it.
+    // say so in the response to the request that asked for it. Building the
+    // detector here also validates its settings once, instead of failing the
+    // same way on every parallel task.
     state
         .registry
         .get(&spec.detector)
+        .and_then(|f| f.build(&spec.params))
         .map_err(|e| ApiError::unprocessable(e.to_string()))?;
 
     let timeframe = parse_timeframe(&spec.timeframe)?;
@@ -235,6 +257,7 @@ async fn start_run(
     let (id, progress) = state.jobs.create(&spec);
     let request = RunRequest {
         detector: spec.detector.clone(),
+        params: spec.params.clone(),
         from_ts: spec.from_ts,
         to_ts: spec.to_ts,
         sim,

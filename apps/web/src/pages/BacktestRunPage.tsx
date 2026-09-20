@@ -106,6 +106,11 @@ export function BacktestRunPage() {
           <span>Pairs <b>{run.symbols.join(' ')}</b></span>
           {run.engineVersion && <span>Engine <b>{run.engineVersion}</b></span>}
           {run.status === 'completed' && <span>Scanned <b>{run.barsProcessed.toLocaleString()}</b> bars in <b>{run.elapsedMs} ms</b></span>}
+          {run.rulesSnapshot && Object.keys(run.rulesSnapshot).length > 0 && (
+            <span>Settings {Object.entries(run.rulesSnapshot).map(([k, v]) => (
+              <b key={k} style={{ marginRight: 8 }}>{k.replace(/_/g, ' ')} {String(v)}</b>
+            ))}</span>
+          )}
           <StatusTag run={run} />
         </div>
       )}

@@ -234,12 +234,12 @@ impl DetectorFactory for MetronomeFactory {
     fn name(&self) -> &str {
         "test-metronome"
     }
-    fn build(&self) -> Box<dyn Detector> {
-        Box::new(MetronomeDetector {
+    fn build(&self, _params: &serde_json::Value) -> Result<Box<dyn Detector>, engine_core::CoreError> {
+        Ok(Box::new(MetronomeDetector {
             period: 50,
             stop_distance: 0.0020,
             target_distance: 0.0040,
-        })
+        }))
     }
 }
 
@@ -282,6 +282,7 @@ fn runs_end_to_end_and_produces_a_coherent_result() {
     };
 
     let request = RunRequest {
+        params: serde_json::Value::Null,
         detector: "test-metronome".into(),
         from_ts: input[0].time,
         to_ts: input[input.len() - 1].time,
@@ -338,6 +339,7 @@ fn a_run_with_no_symbols_is_an_error_not_an_empty_result() {
     // because the strategy never fired. Only one of those is a bug, so the
     // engine refuses rather than reporting a clean run.
     let request = RunRequest {
+        params: serde_json::Value::Null,
         detector: "test-metronome".into(),
         from_ts: 0,
         to_ts: i64::MAX,
@@ -418,8 +420,8 @@ impl DetectorFactory for OneShotFactory {
     fn name(&self) -> &str {
         "test-one-shot"
     }
-    fn build(&self) -> Box<dyn Detector> {
-        Box::new(OneShot { at: 5 })
+    fn build(&self, _params: &serde_json::Value) -> Result<Box<dyn Detector>, engine_core::CoreError> {
+        Ok(Box::new(OneShot { at: 5 }))
     }
 }
 
@@ -449,6 +451,7 @@ fn a_stop_hit_inside_the_entry_bar_closes_the_trade_there() {
 
     let sim = config();
     let request = RunRequest {
+        params: serde_json::Value::Null,
         detector: "test-one-shot".into(),
         from_ts: input[0].time,
         to_ts: input[input.len() - 1].time,
@@ -502,8 +505,8 @@ impl DetectorFactory for ScriptedFactory {
     fn name(&self) -> &str {
         "test-scripted"
     }
-    fn build(&self) -> Box<dyn Detector> {
-        Box::new(Scripted { at: self.at.clone(), stop_distance: self.stop_distance })
+    fn build(&self, _params: &serde_json::Value) -> Result<Box<dyn Detector>, engine_core::CoreError> {
+        Ok(Box::new(Scripted { at: self.at.clone(), stop_distance: self.stop_distance }))
     }
 }
 
@@ -528,6 +531,7 @@ fn flat_with(tag: &str, n: usize, overrides: &[(usize, (f64, f64, f64, f64))]) -
 fn run_scripted(bars: Arc<Bars>, factory: &ScriptedFactory, sim: SimConfig) -> engine_core::RunResult {
     let times = bars.time().to_vec();
     let request = RunRequest {
+        params: serde_json::Value::Null,
         detector: "test-scripted".into(),
         from_ts: times[0],
         to_ts: *times.last().unwrap(),

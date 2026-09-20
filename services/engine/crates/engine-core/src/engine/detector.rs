@@ -19,6 +19,19 @@ use serde::{Deserialize, Serialize};
 use crate::engine::window::BarCtx;
 use crate::error::{CoreError, Result};
 
+/// Turns a settings blob into a detector's own parameter struct.
+///
+/// `null` gives the defaults. Unknown keys are an error: a misspelled
+/// parameter that is silently ignored means the run used rules nobody chose.
+pub fn params_from<T: serde::de::DeserializeOwned>(params: &serde_json::Value) -> Result<T> {
+    let value = if params.is_null() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        params.clone()
+    };
+    serde_json::from_value(value).map_err(|e| CoreError::Config(format!("bad strategy settings: {e}")))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
@@ -143,15 +156,41 @@ pub trait Detector: Send {
 
 /// Builds a fresh detector per parallel task. Detectors are `&mut` and stateful,
 /// so they cannot be shared across rayon workers — each worker gets its own.
+///
+/// A factory also describes its strategy: what it does, what it can be tuned
+/// with, and which timeframes it needs. The results page builds its settings
+/// form from that, so a new strategy needs no UI change.
 pub trait DetectorFactory: Send + Sync {
     fn name(&self) -> &str;
+
     /// The rules' version (rule 6). Bumped whenever what the detector finds
     /// changes, and recorded on every run so results from different rules are
     /// never compared as if they were the same strategy.
     fn version(&self) -> u32 {
         0
     }
-    fn build(&self) -> Box<dyn Detector>;
+
+    /// What the strategy looks for, in the trader's own words.
+    fn description(&self) -> &str {
+        ""
+    }
+
+    /// Timeframes this strategy needs: the one it runs on, then any higher
+    /// ones it reads. Empty means it works on whatever it is given.
+    fn timeframes(&self) -> (&str, Vec<&str>) {
+        ("", Vec::new())
+    }
+
+    /// The tunable settings, as `[{ key, label, kind, default, ... }]`. Drives
+    /// the form; the same keys come back in `build`.
+    fn params_schema(&self) -> serde_json::Value {
+        serde_json::Value::Array(Vec::new())
+    }
+
+    /// Builds a detector with the given settings. `null` means defaults.
+    /// Rejects unknown or out-of-range values rather than silently ignoring
+    /// them — a typo in a parameter must not quietly run different rules.
+    fn build(&self, params: &serde_json::Value) -> Result<Box<dyn Detector>>;
 }
 
 /// Stands in until the rules exist. It emits nothing, and the runner refuses
@@ -170,8 +209,8 @@ impl DetectorFactory for NoDetector {
     fn name(&self) -> &str {
         "none"
     }
-    fn build(&self) -> Box<dyn Detector> {
-        Box::new(NoDetector)
+    fn build(&self, _params: &serde_json::Value) -> Result<Box<dyn Detector>> {
+        Ok(Box::new(NoDetector))
     }
 }
 

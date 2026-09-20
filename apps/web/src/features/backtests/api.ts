@@ -1,11 +1,13 @@
 import { request } from '../../lib/api';
 import type {
-  Bars, CachedSeries, ImportJob, Run, StartRunInput, Trade,
+  Bars, CachedSeries, ImportJob, Run, StartRunInput, Strategy, Trade,
 } from './types';
 
 export const backtestApi = {
   detectors: () =>
-    request<{ detectors: string[]; versions: Record<string, number> }>('/backtest/detectors'),
+    request<{ detectors: string[]; versions: Record<string, number>; strategies: Strategy[] }>(
+      '/backtest/detectors',
+    ),
 
   cache: () => request<{ series: CachedSeries[] }>('/backtest/cache'),
 

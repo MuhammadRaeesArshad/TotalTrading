@@ -54,6 +54,8 @@ export type EngineJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'c
 /** Body for `POST /runs`. Snake case because it is the engine's wire format. */
 export interface EngineRunSpec {
   detector: string;
+  /** The strategy's own settings. The engine validates them. */
+  params?: Record<string, unknown>;
   symbols: string[];
   timeframe: string;
   higher_timeframes?: string[];
@@ -186,9 +188,12 @@ export class BacktestClient {
   }
 
   detectors() {
-    return this.request<{ detectors: string[]; versions: Record<string, number> }>(
-      'GET', '/detectors', undefined, 10_000,
-    );
+    return this.request<{
+      detectors: string[];
+      versions: Record<string, number>;
+      /** Per-strategy description, timeframes and settings schema. */
+      strategies: unknown[];
+    }>('GET', '/detectors', undefined, 10_000);
   }
 
   /** Queues a run. Returns at once with the engine's job id. */

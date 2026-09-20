@@ -2,21 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../lib/api';
 import { Modal } from '../../../components/Modal';
 import { backtestApi } from '../api';
-import type { CachedSeries, IntrabarPolicy, Run } from '../types';
+import type { CachedSeries, IntrabarPolicy, ParamSpec, Run, Strategy } from '../types';
 
 const toDay = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 10);
 const fromDay = (d: string) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000);
 
+const defaults = (specs: ParamSpec[]): Record<string, unknown> =>
+  Object.fromEntries(specs.map((p) => [p.key, p.default]));
+
 /**
- * Starts a backtest over history already in the cache. Only what is cached is
- * offered, so a run cannot be pointed at data that does not exist.
+ * Starts a backtest. Everything below the pair list comes from the strategy
+ * itself — its description, the timeframes it reads and its own settings — so
+ * a new strategy needs no change here.
  */
 export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClose: () => void; onStarted: (run: Run) => void }) {
-  const [detectors, setDetectors] = useState<{ name: string; version: number }[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [series, setSeries] = useState<CachedSeries[]>([]);
   const [detector, setDetector] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
+  const [params, setParams] = useState<Record<string, unknown>>({});
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [risk, setRisk] = useState(1);
@@ -30,20 +35,26 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
     setError(null);
     Promise.all([backtestApi.detectors(), backtestApi.cache()])
       .then(([d, c]) => {
-        const list = d.detectors.map((name) => ({ name, version: d.versions[name] ?? 0 }));
-        setDetectors(list);
-        setDetector((cur) => cur || list[0]?.name || '');
+        setStrategies(d.strategies);
+        setDetector((cur) => cur || d.strategies[0]?.name || '');
         setSeries(c.series);
-        const tfs = [...new Set(c.series.map((s) => s.timeframe))];
-        setTimeframe((cur) => (cur && tfs.includes(cur) ? cur : tfs.includes('H1') ? 'H1' : tfs[0] ?? ''));
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not reach the engine.'));
   }, [open]);
 
-  const forTf = useMemo(() => series.filter((s) => s.timeframe === timeframe), [series, timeframe]);
-  const timeframes = useMemo(() => [...new Set(series.map((s) => s.timeframe))].sort(), [series]);
+  const strategy = strategies.find((s) => s.name === detector) ?? null;
+  const cachedTimeframes = useMemo(() => [...new Set(series.map((s) => s.timeframe))].sort(), [series]);
 
-  // Default to every cached pair on this timeframe, over the range they all cover.
+  // A strategy that names its own timeframes decides them; otherwise pick one.
+  useEffect(() => {
+    if (!strategy) return;
+    setParams(defaults(strategy.params));
+    setTimeframe(strategy.timeframe || (cachedTimeframes.includes('H1') ? 'H1' : cachedTimeframes[0] ?? ''));
+  }, [strategy, cachedTimeframes]);
+
+  const forTf = useMemo(() => series.filter((s) => s.timeframe === timeframe), [series, timeframe]);
+  const missing = (strategy?.higher_timeframes ?? []).filter((tf) => !cachedTimeframes.includes(tf));
+
   useEffect(() => {
     setSymbols(forTf.map((s) => s.symbol));
     const firsts = forTf.map((s) => s.first_ts).filter((v): v is number => v != null);
@@ -60,9 +71,11 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
         detector,
         symbols,
         timeframe,
+        higherTimeframes: strategy?.higher_timeframes ?? [],
         fromTs: fromDay(from),
         toTs: fromDay(to) + 86_399,
         sim: { riskPercent: risk, maxOpenPerSymbol: maxOpen, intrabar },
+        params,
       });
       onStarted(run);
     } catch (e) {
@@ -72,34 +85,48 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
     }
   }
 
-  const noCache = series.length === 0;
-  const valid = detector && timeframe && symbols.length && from && to && from < to;
+  const valid = detector && timeframe && symbols.length && from && to && from < to && missing.length === 0;
 
   return (
     <Modal open={open} onClose={busy ? () => undefined : onClose}
       title="New backtest"
-      description="Replays cached history through a detector. Costs are pessimistic: spread and slippage on every fill, ambiguous bars scored against the strategy."
+      description="Replays cached history through a strategy. Costs are pessimistic: spread and slippage on every fill, ambiguous bars scored against the strategy."
       footer={<>
         <button className="btn2" onClick={onClose} disabled={busy}>Cancel</button>
         <button className="btn" onClick={submit} disabled={busy || !valid}>{busy ? 'Starting…' : 'Run backtest'}</button>
       </>}>
       {error && <div className="alert err">{error}</div>}
-      {noCache && !error && <div className="alert">No history is cached yet. Import some first.</div>}
+      {series.length === 0 && !error && <div className="alert">No history is cached yet. Import some first.</div>}
 
       <div className="stack">
-        <div className="f2">
-          <div className="f">
-            <label htmlFor="nr-det">Detector</label>
-            <select id="nr-det" value={detector} onChange={(e) => setDetector(e.target.value)}>
-              {detectors.map((d) => <option key={d.name} value={d.name}>{d.name} · v{d.version}</option>)}
+        <div className="f">
+          <label htmlFor="nr-det">Strategy</label>
+          <select id="nr-det" value={detector} onChange={(e) => setDetector(e.target.value)}>
+            {strategies.map((s) => <option key={s.name} value={s.name}>{s.name} · v{s.version}</option>)}
+          </select>
+          {strategy?.description && <span className="hint" style={{ lineHeight: 1.5 }}>{strategy.description}</span>}
+        </div>
+
+        <div className="f">
+          <label>Timeframes</label>
+          {strategy?.timeframe ? (
+            <div className="inline" style={{ gap: 6 }}>
+              <span className="tag hot">{strategy.timeframe} · entries</span>
+              {strategy.higher_timeframes.map((tf) => (
+                <span key={tf} className={`tag${missing.includes(tf) ? ' bad' : ''}`}>{tf}</span>
+              ))}
+              <span className="hint" style={{ width: '100%' }}>Set by the strategy.</span>
+            </div>
+          ) : (
+            <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} disabled={!series.length}>
+              {cachedTimeframes.map((t) => <option key={t}>{t}</option>)}
             </select>
-          </div>
-          <div className="f">
-            <label htmlFor="nr-tf">Timeframe</label>
-            <select id="nr-tf" value={timeframe} onChange={(e) => setTimeframe(e.target.value)} disabled={noCache}>
-              {timeframes.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </div>
+          )}
+          {missing.length > 0 && (
+            <div className="alert err" style={{ marginTop: 8 }}>
+              {missing.join(', ')} {missing.length === 1 ? 'is' : 'are'} not cached. Import {missing.length === 1 ? 'it' : 'them'} before running this strategy.
+            </div>
+          )}
         </div>
 
         <div className="f">
@@ -115,6 +142,7 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
                 </label>
               );
             })}
+            {forTf.length === 0 && <span className="dimmer" style={{ fontSize: 12 }}>Nothing cached on {timeframe || 'this timeframe'}.</span>}
           </div>
         </div>
 
@@ -122,6 +150,21 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
           <div className="f"><label htmlFor="nr-from">From</label><input id="nr-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="f"><label htmlFor="nr-to">To</label><input id="nr-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         </div>
+
+        {strategy && strategy.params.length > 0 && (
+          <div className="f">
+            <div className="spread">
+              <label style={{ margin: 0 }}>{strategy.name} settings</label>
+              <button type="button" className="btn3" onClick={() => setParams(defaults(strategy.params))}>reset</button>
+            </div>
+            <div className="f2">
+              {strategy.params.map((p) => (
+                <ParamField key={p.key} spec={p} value={params[p.key]}
+                  onChange={(v) => setParams((cur) => ({ ...cur, [p.key]: v }))} />
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="f2">
           <div className="f">
@@ -145,5 +188,42 @@ export function NewRunModal({ open, onClose, onStarted }: { open: boolean; onClo
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** One setting, rendered from its declared kind. */
+function ParamField({ spec, value, onChange }: { spec: ParamSpec; value: unknown; onChange: (v: unknown) => void }) {
+  const id = `param-${spec.key}`;
+  if (spec.kind === 'bool') {
+    return (
+      <div className="f">
+        <label htmlFor={id}>{spec.label}</label>
+        <label className="inline" style={{ gap: 8, cursor: 'pointer' }}>
+          <input id={id} type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+          <span className="dim" style={{ fontSize: 12.5 }}>{value ? 'on' : 'off'}</span>
+        </label>
+        {spec.help && <span className="hint">{spec.help}</span>}
+      </div>
+    );
+  }
+  if (spec.kind === 'choice') {
+    return (
+      <div className="f">
+        <label htmlFor={id}>{spec.label}</label>
+        <select id={id} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
+          {(spec.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {spec.help && <span className="hint">{spec.help}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="f">
+      <label htmlFor={id}>{spec.label}</label>
+      <input id={id} type="number" value={Number(value ?? 0)} min={spec.min} max={spec.max}
+        step={spec.step ?? (spec.kind === 'int' ? 1 : 0.1)}
+        onChange={(e) => onChange(spec.kind === 'int' ? Math.round(Number(e.target.value)) : Number(e.target.value))} />
+      {spec.help && <span className="hint">{spec.help}</span>}
+    </div>
   );
 }

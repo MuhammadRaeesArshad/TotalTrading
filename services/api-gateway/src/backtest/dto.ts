@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayNotEmpty, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString,
+  ArrayMaxSize, ArrayNotEmpty, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString,
   Matches, Max, Min, ValidateNested,
 } from 'class-validator';
 import { Timeframe } from '../schemas/strategy.schema';
@@ -84,4 +84,13 @@ export class StartBacktestDto {
   @ValidateNested()
   @Type(() => SimOverridesDto)
   sim?: SimOverridesDto;
+
+  /**
+   * The strategy's own settings, keyed as its schema declares. Left untyped
+   * here on purpose: each detector owns its parameters and validates them,
+   * so the gateway would only be duplicating that check badly.
+   */
+  @IsOptional()
+  @IsObject()
+  params?: Record<string, unknown>;
 }

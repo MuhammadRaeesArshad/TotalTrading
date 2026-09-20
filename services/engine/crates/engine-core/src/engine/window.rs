@@ -175,4 +175,11 @@ impl<'a> HigherBarCtx<'a> {
         let end = self.index + 1;
         &self.bars.low()[end.saturating_sub(n)..end]
     }
+
+    /// Opens, for telling a down-close candle from an up-close one.
+    #[inline]
+    pub fn opens(&self, n: usize) -> &'a [f64] {
+        let end = self.index + 1;
+        &self.bars.open_px()[end.saturating_sub(n)..end]
+    }
 }

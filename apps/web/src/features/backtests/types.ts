@@ -64,6 +64,8 @@ export interface Run {
   barsProcessed: number;
   elapsedMs: number;
   skipped: SkipCounts | null;
+  /** The strategy settings this run used, frozen at run time. */
+  rulesSnapshot?: Record<string, unknown>;
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
@@ -143,6 +145,30 @@ export interface ImportJob {
   report?: ImportReport;
 }
 
+/** One tunable setting, as the strategy declares it. */
+export interface ParamSpec {
+  key: string;
+  label: string;
+  kind: 'int' | 'float' | 'bool' | 'choice';
+  default: unknown;
+  min?: number;
+  max?: number;
+  step?: number;
+  help?: string;
+  options?: { value: string; label: string }[];
+}
+
+/** A strategy the engine can run, and everything its form needs. */
+export interface Strategy {
+  name: string;
+  version: number;
+  description: string;
+  /** The timeframe it runs on. Empty means it takes whatever it is given. */
+  timeframe: string;
+  higher_timeframes: string[];
+  params: ParamSpec[];
+}
+
 export interface StartRunInput {
   detector: string;
   symbols: string[];
@@ -156,4 +182,6 @@ export interface StartRunInput {
     intrabar?: IntrabarPolicy;
     initialBalance?: number;
   };
+  /** The strategy's own settings. The engine validates them. */
+  params?: Record<string, unknown>;
 }

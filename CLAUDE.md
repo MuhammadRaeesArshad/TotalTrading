@@ -265,10 +265,15 @@ execution, under any circumstances.
 given in the conversation, stop and ask. No placeholder rules — a guessed rule propagates
 into live scanning and gets traded.
 
-Current strategy specs: `smc_ob` is approved and implemented
-(`2026-09-19-smc-order-blocks-design.md`). The user's own multi-timeframe strategy is a
-**draft with open questions** (`2026-09-19-smc-mtf-strategy-draft.md`) — do not build it
-until they are answered.
+Current strategies, both implemented: `smc_ob` (single timeframe, pipeline test,
+`2026-09-19-smc-order-blocks-design.md`) and `smc_mtf` (the user's own multi-timeframe
+strategy, `2026-09-20-smc-mtf-design.md`).
+
+**Strategies own their settings.** A `DetectorFactory` declares its description, the
+timeframes it needs and a schema for its parameters; `GET /detectors` serves them and the
+form builds itself. Metrics stay common to every strategy — that is what makes them
+comparable — while settings and the per-trade `detail` are strategy-specific. Settings are
+frozen onto each run, and unknown keys are refused rather than ignored.
 
 ## Skills
 

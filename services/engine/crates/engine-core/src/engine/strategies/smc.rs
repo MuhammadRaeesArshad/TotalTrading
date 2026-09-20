@@ -22,7 +22,13 @@
 
 use std::collections::HashMap;
 
-use crate::engine::detector::{Detector, DetectorFactory, Direction, Signal, SignalSink};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::engine::detector::{
+    params_from, Detector, DetectorFactory, Direction, Signal, SignalSink,
+};
+use crate::error::Result;
 use crate::engine::rolling::Atr;
 use crate::engine::structure::{SwingTracker, Zone, ZoneBook};
 use crate::engine::window::BarCtx;
@@ -33,7 +39,8 @@ pub const DETECTOR_NAME: &str = "smc_ob";
 /// backtest from one version is not comparable with one from another (rule 6).
 pub const DETECTOR_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct SmcParams {
     /// Bars either side of a fractal swing.
     pub swing_lookback: usize,
@@ -341,8 +348,33 @@ impl DetectorFactory for SmcFactory {
         DETECTOR_VERSION
     }
 
-    fn build(&self) -> Box<dyn Detector> {
-        Box::new(SmcDetector::new(self.params))
+    fn description(&self) -> &str {
+        "Single timeframe. Trend is the direction of the last swing break of \
+         structure; the order block is the last opposing candle before the \
+         impulse that broke it; entry on the first touch of that block. A test \
+         of the pipeline rather than a claimed edge."
+    }
+
+    fn params_schema(&self) -> serde_json::Value {
+        let d = SmcParams::default();
+        json!([
+            { "key": "swing_lookback", "label": "Swing lookback", "kind": "int", "default": d.swing_lookback,
+              "min": 2, "max": 20, "help": "Bars either side of a swing high or low." },
+            { "key": "ob_search_bars", "label": "Order block search", "kind": "int", "default": d.ob_search_bars,
+              "min": 3, "max": 60, "help": "How far back to look for the opposing candle." },
+            { "key": "zone_max_age", "label": "Zone lifetime", "kind": "int", "default": d.zone_max_age,
+              "min": 5, "max": 500, "help": "Bars before an untouched zone expires." },
+            { "key": "atr_buffer", "label": "Stop buffer (ATR)", "kind": "float", "default": d.atr_buffer,
+              "min": 0.0, "max": 2.0, "step": 0.05, "help": "Stop distance beyond the zone, in ATR." },
+            { "key": "target_r", "label": "Target (R)", "kind": "float", "default": d.target_r,
+              "min": 0.5, "max": 10.0, "step": 0.5, "help": "Take profit, as a multiple of risk." },
+            { "key": "require_fvg", "label": "Require a fair value gap", "kind": "bool", "default": d.require_fvg,
+              "help": "Only take blocks whose impulse left a gap. Far fewer trades." }
+        ])
+    }
+
+    fn build(&self, params: &serde_json::Value) -> Result<Box<dyn Detector>> {
+        Ok(Box::new(SmcDetector::new(params_from::<SmcParams>(params)?)))
     }
 }
 

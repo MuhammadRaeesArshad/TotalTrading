@@ -32,6 +32,9 @@ pub enum JobStatus {
 pub struct RunSpec {
     /// Which rule set to run. Must be registered; see `GET /detectors`.
     pub detector: String,
+    /// The strategy's own settings; `null` uses its defaults.
+    #[serde(default)]
+    pub params: serde_json::Value,
     pub symbols: Vec<String>,
     /// The timeframe the scan steps through.
     pub timeframe: String,

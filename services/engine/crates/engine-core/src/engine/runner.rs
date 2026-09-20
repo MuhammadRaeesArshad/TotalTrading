@@ -45,6 +45,9 @@ pub struct ScanTask {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRequest {
     pub detector: String,
+    /// The strategy's own settings. `null` uses its defaults.
+    #[serde(default)]
+    pub params: serde_json::Value,
     pub from_ts: i64,
     pub to_ts: i64,
     pub sim: SimConfig,
@@ -200,7 +203,7 @@ fn scan_one(
     let bars = &task.bars;
     bars.advise_sequential();
 
-    let mut detector = factory.build();
+    let mut detector = factory.build(&request.params)?;
     detector.reset();
 
     let alignments: Vec<Alignment> = task

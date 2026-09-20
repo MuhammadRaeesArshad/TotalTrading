@@ -77,6 +77,8 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       timeframes: [dto.timeframe, ...higher],
       fromDate: new Date(dto.fromTs * 1_000),
       toDate: new Date(dto.toTs * 1_000),
+      // Frozen with the run: which settings produced this result (rule 6).
+      rulesSnapshot: dto.params ?? {},
       initialBalance: sim.initialBalance ?? 10_000,
       riskPercentPerTrade: sim.riskPercent ?? 1,
       intrabarPolicy: sim.intrabar ?? 'pessimistic',
@@ -87,6 +89,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     try {
       const started = await this.engine.startRun({
         detector: dto.detector,
+        params: dto.params,
         symbols,
         timeframe: dto.timeframe,
         higher_timeframes: higher,

@@ -8,10 +8,9 @@ description = "The hot path: columnar bars, sliding windows, simulation, metrics
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 bytemuck = { version = "1.14", features = ["derive"] }
 memmap2 = "0.9"
 rayon = "1.8"
 
-[dev-dependencies]
-serde_json = { workspace = true }

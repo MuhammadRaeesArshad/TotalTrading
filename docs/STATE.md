@@ -30,6 +30,11 @@ a stale handoff is worse than none.
 - **Runs can be archived or deleted.** Two lists, Current and Archived;
   archiving only moves a run aside and keeps every trade. Deleting removes the
   run and its trades for good and asks first.
+- **One filter for the whole report.** Pairs and sessions multi-select, side,
+  result and a date range, above the tabs and in the URL. Trades, Verdict,
+  Ledger, Replay and Anatomy all recompute from what survives, including the
+  starting capital — narrowing a per-pair run to three pairs measures against
+  three balances, not twenty-nine.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and

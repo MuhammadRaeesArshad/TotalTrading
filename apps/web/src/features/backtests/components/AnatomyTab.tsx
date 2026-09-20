@@ -14,7 +14,17 @@ const SMALL_SAMPLE = 30;
  * or cell filters every other chart. This is the strongest overfitting trap on
  * the page, so the sample size of every slice is always on screen.
  */
-export function AnatomyTab({ trades, initialBalance }: { trades: Trade[]; initialBalance: number }) {
+export function AnatomyTab({ trades, initialBalance, activePair, activeSession, onPickPair, onPickSession }: {
+  trades: Trade[];
+  initialBalance: number;
+  /** The page's filter, when it names exactly one — so the bar can show lit. */
+  activePair: string | null;
+  activeSession: string | null;
+  onPickPair: (pair: string) => void;
+  onPickSession: (session: string) => void;
+}) {
+  // Only the month stays here: the page's filter carries a date range, and a
+  // month is a shorthand for one that the other tabs have no use for.
   const [f, setF] = useState<Filters>({ session: null, pair: null, month: null });
 
   // Each chart is filtered by every active filter except its own, so picking
@@ -41,7 +51,7 @@ export function AnatomyTab({ trades, initialBalance }: { trades: Trade[]; initia
   return (
     <div className="stack">
       <div className="inline" style={{ minHeight: 30, fontSize: 12.5, color: 'var(--fg-3)' }}>
-        {chips.length === 0 && <span>No filters. Click a bar or a cell to slice the results.</span>}
+        {chips.length === 0 && <span>Click a pair or a session to filter the whole report; click a month to slice these charts.</span>}
         {chips.map((k) => (
           <span key={k} className="fchip">
             {k === 'month' ? monthLabel(f[k]!) : f[k]}
@@ -59,10 +69,10 @@ export function AnatomyTab({ trades, initialBalance }: { trades: Trade[]; initia
           <RHistogram counts={rHistogram(base)} />
         </Panel>
         <Panel title="Win rate by session" note="entry time, UTC · click to filter">
-          <SessionBars groups={bySession} order={SESSIONS.map((x) => x.name)} active={f.session} onPick={toggle('session')} />
+          <SessionBars groups={bySession} order={SESSIONS.map((x) => x.name)} active={activeSession} onPick={onPickSession} />
         </Panel>
         <Panel title="Net R by pair" note="click to filter">
-          <PairBars groups={byPair} active={f.pair} onPick={toggle('pair')} />
+          <PairBars groups={byPair} active={activePair} onPick={onPickPair} />
         </Panel>
         <Panel title="Net R by month" note="exit month · click to filter">
           <MonthHeatmap groups={byMonth} years={years} active={f.month} onPick={toggle('month')} />

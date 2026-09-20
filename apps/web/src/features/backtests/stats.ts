@@ -196,10 +196,16 @@ const sgnR = (v: number, dp = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixe
  * repeated with the optimistic intrabar policy, when one exists; without it
  * that criterion is reported as unknown rather than guessed.
  */
-export function verdict(run: Run, trades: Trade[], optimistic: Run | null = null): Criterion[] {
+export function verdict(
+  run: Run,
+  trades: Trade[],
+  /** What the view being judged started with — filtering changes it. */
+  capital: number,
+  optimistic: Run | null = null,
+): Criterion[] {
   const c = DEFAULT_CRITERIA;
   const m = run.metrics;
-  const s = summarize(trades, deployedCapital(run));
+  const s = summarize(trades, capital);
   const n = m?.totalTrades ?? s.n;
   const pf = m ? m.profitFactor : s.profitFactor;
   const expR = m?.expectancyR ?? s.expR;

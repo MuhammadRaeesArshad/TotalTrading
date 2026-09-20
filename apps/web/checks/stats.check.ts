@@ -78,13 +78,13 @@ const run = {
     totalTrades: 3, profitFactor: 1, expectancyR: 0, maxDrawdownPct: 1.96, ambiguousExits: 0,
   },
 } as unknown as Run;
-const v = verdict(run, trades);
+const v = verdict(run, trades, run.initialBalance);
 assert.equal(v.find((c) => c.id === 'intrabar')?.status, 'unknown');
 assert.equal(v.find((c) => c.id === 'sample')?.status, 'fail', '3 trades is not a sample');
 assert.equal(v.find((c) => c.id === 'dd')?.status, 'pass');
 
 const optimistic = { metrics: { profitFactor: 1.1 } } as unknown as Run;
-assert.equal(verdict(run, trades, optimistic).find((c) => c.id === 'intrabar')?.status, 'pass');
+assert.equal(verdict(run, trades, run.initialBalance, optimistic).find((c) => c.id === 'intrabar')?.status, 'pass');
 
 console.log('stats.check: all assertions passed');
 

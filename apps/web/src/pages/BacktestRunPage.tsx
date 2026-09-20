@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
@@ -7,6 +7,9 @@ import { useRun, useTrades } from '../features/backtests/hooks';
 import type { Run } from '../features/backtests/types';
 import { fmtDate, fmtMoney, fmtPct, fmtR, moneyClass } from '../features/backtests/fmt';
 import { deployedCapital } from '../features/backtests/stats';
+import { applyFilter, capitalFor, fromParams, toParams } from '../features/backtests/filter';
+import type { TradeFilter } from '../features/backtests/filter';
+import { FilterBar } from '../features/backtests/components/FilterBar';
 import { TradesTab } from '../features/backtests/components/TradesTab';
 import { VerdictTab } from '../features/backtests/components/VerdictTab';
 import { LedgerTab } from '../features/backtests/components/LedgerTab';
@@ -51,6 +54,22 @@ export function BacktestRunPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const tab = (TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'trades') as TabId;
+
+  // The filter lives in the URL: a narrowed view is a link, and the back
+  // button walks through what you looked at rather than losing it.
+  const filter = fromParams((k) => params.get(k));
+  const setFilter = (next: TradeFilter) => setParams((p) => {
+    for (const k of ['pairs', 'sessions', 'side', 'result', 'from', 'to']) p.delete(k);
+    for (const [k, v] of Object.entries(toParams(next))) p.set(k, v);
+    // A trade chosen under the old filter may not survive the new one.
+    p.delete('trade');
+    return p;
+  });
+
+  // Everything below the bar reads this, not `trades` — that is the whole
+  // point: one filter, and every figure on the page recomputes from it.
+  const filtered = useMemo(() => applyFilter(trades ?? [], filter), [trades, filter]);
+  const capital = run ? capitalFor(run, filter) : 0;
   const tradeId = params.get('trade');
 
   const setTab = (t: TabId) => setParams((p) => { p.set('tab', t); return p; }, { replace: true });
@@ -159,17 +178,37 @@ export function BacktestRunPage() {
             ))}
           </div>
 
+          {trades && trades.length > 0 && (
+            <FilterBar all={trades} shown={filtered} value={filter} onChange={setFilter} />
+          )}
+
           {!trades && !tradesError && <div className="card card-b"><div className="skel" style={{ width: '50%' }} /></div>}
           {trades && trades.length === 0 && (
             <div className="card empty"><h3>No trades</h3><p>The detector found no setups that became trades in this window. The skipped counts above say why signals were dropped.</p></div>
           )}
-          {trades && trades.length > 0 && (
+          {trades && trades.length > 0 && filtered.length === 0 && (
+            <div className="card empty">
+              <h3>Nothing matches</h3>
+              <p>All {trades.length.toLocaleString()} trades were filtered out. Widen the filter above.</p>
+            </div>
+          )}
+          {trades && filtered.length > 0 && (
             <>
-              {tab === 'trades' && <TradesTab run={run} trades={trades} selectedId={tradeId} onSelect={selectTrade} />}
-              {tab === 'verdict' && <VerdictTab run={run} trades={trades} optimistic={twin} onRunOptimistic={runTwin} startingOptimistic={startingTwin} />}
-              {tab === 'ledger' && <LedgerTab run={run} trades={trades} onOpen={openTrade} />}
-              {tab === 'replay' && <ReplayTab run={run} trades={trades} onOpen={openTrade} />}
-              {tab === 'anatomy' && <AnatomyTab trades={trades} initialBalance={deployedCapital(run)} />}
+              {tab === 'trades' && <TradesTab run={run} trades={filtered} selectedId={tradeId} onSelect={selectTrade} />}
+              {tab === 'verdict' && <VerdictTab run={run} trades={filtered} capital={capital} optimistic={twin} onRunOptimistic={runTwin} startingOptimistic={startingTwin} />}
+              {tab === 'ledger' && <LedgerTab run={run} trades={filtered} capital={capital} onOpen={openTrade} />}
+              {tab === 'replay' && <ReplayTab trades={filtered} capital={capital} onOpen={openTrade} />}
+              {tab === 'anatomy' && (
+                <AnatomyTab trades={filtered} initialBalance={capital}
+                  activePair={filter.pairs.length === 1 ? filter.pairs[0] : null}
+                  activeSession={filter.sessions.length === 1 ? filter.sessions[0] : null}
+                  onPickPair={(p: string) => setFilter({
+                    ...filter, pairs: filter.pairs.length === 1 && filter.pairs[0] === p ? [] : [p],
+                  })}
+                  onPickSession={(sn: string) => setFilter({
+                    ...filter, sessions: filter.sessions.length === 1 && filter.sessions[0] === sn ? [] : [sn],
+                  })} />
+              )}
             </>
           )}
         </>

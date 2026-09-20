@@ -35,7 +35,7 @@ export function NewRunModal({ open, onClose, onStarted, onSwept }: {
   const [risk, setRisk] = useState(1);
   const [maxOpen, setMaxOpen] = useState(3);
   const [intrabar, setIntrabar] = useState<IntrabarPolicy>('pessimistic');
-  const [capital, setCapital] = useState<CapitalMode>('shared');
+  const [capital, setCapital] = useState<CapitalMode>('per_symbol');
   const [busy, setBusy] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [error, setError] = useState<string | null>(null);

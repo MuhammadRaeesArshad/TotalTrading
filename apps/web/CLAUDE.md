@@ -44,3 +44,8 @@ reference.
 The web app has no test framework. Its pure logic (`features/*/stats.ts`) is written in
 erasable TypeScript with no imports beyond types, and checked by `apps/web/checks/*.check.ts`
 under plain `node` (22.6+ strips types). Keep it that way rather than adding a framework.
+
+Such a module may import another one, but the path needs the `.ts` extension —
+node resolves it, and `allowImportingTsExtensions` is on so tsc and Vite accept
+it. That is what lets `filter.ts` use `isWin` from `stats.ts` instead of keeping
+a second copy of the rule.

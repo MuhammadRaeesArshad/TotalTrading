@@ -151,7 +151,8 @@ all of them. Selecting cells composes them into one combined result.
 - [x] Design agreed
 - [x] 1a · fingerprint + dedup on the existing one-run shape
 - [x] 1b · dropped — per-pair capital plus read-time filtering does the job
-- [ ] 2 · global filters
+- [x] 2 · global filters — one bar above the tabs, in the URL, every tab and
+      every statistic recomputing from what survives
 - [x] 3 · sweep launch — `POST /backtest/sweeps`, a queue that runs one cell
       at a time, and `/sweeps/:id` showing every axis
 - [ ] 3b · a chart per axis instead of a table

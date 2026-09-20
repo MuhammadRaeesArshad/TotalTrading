@@ -9,15 +9,17 @@ import { fmtMoney, moneyClass } from '../fmt';
  * unknown. Money figures alone carry colour.
  */
 export function VerdictTab({
-  run, trades, optimistic, onRunOptimistic, startingOptimistic,
+  run, trades, capital, optimistic, onRunOptimistic, startingOptimistic,
 }: {
   run: Run;
   trades: Trade[];
+  /** What the filtered view started with — the page decides it. */
+  capital: number;
   optimistic: Run | null;
   onRunOptimistic: () => void;
   startingOptimistic: boolean;
 }) {
-  const criteria = useMemo(() => verdict(run, trades, optimistic), [run, trades, optimistic]);
+  const criteria = useMemo(() => verdict(run, trades, capital, optimistic), [run, trades, capital, optimistic]);
   const passed = criteria.filter((c) => c.status === 'pass').length;
   const failed = criteria.filter((c) => c.status === 'fail');
   const years = useMemo(

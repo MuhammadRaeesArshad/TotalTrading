@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Run, Trade } from '../types';
-import { SESSIONS, isWin, rOf, sessionOf } from '../stats';
+import { isWin, rOf, sessionOf } from '../stats';
 import { fmtMoney, fmtR, fmtWhen, moneyClass } from '../fmt';
 import { TradePanel } from './TradePanel';
 
@@ -31,24 +31,16 @@ export function TradesTab({
   onSelect: (id: string) => void;
 }) {
   const narrow = useNarrow();
-  const [pair, setPair] = useState('');
-  const [side, setSide] = useState('');
-  const [result, setResult] = useState('');
-  const [session, setSession] = useState('');
   const [sort, setSort] = useState<SortKey>('entry');
 
-  const pairs = useMemo(() => [...new Set(trades.map((t) => t.symbol))].sort(), [trades]);
-
+  // Narrowing happens on the page's filter bar, so every tab agrees on which
+  // trades are being talked about. Ordering is this list's own business.
   const shown = useMemo(() => {
-    const list = trades.filter((t) =>
-      (!pair || t.symbol === pair) &&
-      (!side || t.direction === side) &&
-      (!result || (result === 'win' ? isWin(t) : !isWin(t))) &&
-      (!session || sessionOf(t.entryTime) === session));
+    const list = [...trades];
     if (sort === 'r-desc') list.sort((a, b) => rOf(b) - rOf(a));
     else if (sort === 'r-asc') list.sort((a, b) => rOf(a) - rOf(b));
     return list;
-  }, [trades, pair, side, result, session, sort]);
+  }, [trades, sort]);
 
   const selected = trades.find((t) => t._id === selectedId) ?? null;
 
@@ -73,24 +65,6 @@ export function TradesTab({
     <div className="split">
       <div className="card">
         <div className="filters">
-          <select className="sel" aria-label="Pair" value={pair} onChange={(e) => setPair(e.target.value)}>
-            <option value="">All pairs</option>
-            {pairs.map((p) => <option key={p}>{p}</option>)}
-          </select>
-          <select className="sel" aria-label="Side" value={side} onChange={(e) => setSide(e.target.value)}>
-            <option value="">Long and short</option>
-            <option value="long">Long</option>
-            <option value="short">Short</option>
-          </select>
-          <select className="sel" aria-label="Result" value={result} onChange={(e) => setResult(e.target.value)}>
-            <option value="">Wins and losses</option>
-            <option value="win">Wins</option>
-            <option value="loss">Losses</option>
-          </select>
-          <select className="sel" aria-label="Session" value={session} onChange={(e) => setSession(e.target.value)}>
-            <option value="">All sessions</option>
-            {SESSIONS.map((s) => <option key={s.name}>{s.name}</option>)}
-          </select>
           <select className="sel" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
             <option value="entry">By entry time</option>
             <option value="r-desc">Best first</option>

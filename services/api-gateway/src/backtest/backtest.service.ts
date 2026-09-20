@@ -16,7 +16,7 @@ import { mapEquity, mapMetrics, mapSkipped, mapTrade, tradeWindow } from './back
 import { fingerprint, withSimDefaults } from './backtest.fingerprint';
 import { StartBacktestDto, StartSweepDto } from './dto';
 import { distinctCount, expandSweep, ParamSpec } from './sweep';
-import { Dimension, ExploreRow, pipelineFor, toRows, totalsOf } from './explore';
+import { describeParams, Dimension, ExploreRow, pipelineFor, toRows, totalsOf } from './explore';
 import { Sweep, SweepCellDoc, SweepDocument } from '../schemas/sweep.schema';
 
 const POLL_MS = 1_000;
@@ -477,17 +477,12 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
         .lean();
       if (!sweep) throw new NotFoundException('No sweep with that id.');
       runIds = sweep.cells.filter((c) => c.runId).map((c) => String(c.runId));
-      labels = new Map(
-        sweep.cells
-          .filter((c) => c.runId)
-          .map((c) => [String(c.runId), `${c.axis} = ${String(c.value)}`]),
-      );
     }
 
     // Only the caller's own runs, whatever they asked for.
     const owned = await this.backtests
       .find({ _id: { $in: runIds.map((id) => new Types.ObjectId(id)) }, userId: uid })
-      .select({ _id: 1, detector: 1, detectorVersion: 1 })
+      .select({ _id: 1, detector: 1, detectorVersion: 1, rulesSnapshot: 1 })
       .lean();
     const allowed = owned.map((r) => String(r._id));
     if (!allowed.length) {
@@ -508,14 +503,48 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     const raw = await this.trades.aggregate(pipelineFor(query) as never[]);
     const rows = toRows(raw as never[], body.by);
 
-    // A run id is not a finding; say which setting it was.
+    // A run id is not a finding; say which setting it was. Labels come from
+    // whichever sweep produced the run — not only the one being explored,
+    // since "every backtest" is a perfectly good scope to ask this of.
     const settingAt = body.by.indexOf('setting');
     if (settingAt >= 0) {
+      const ids = owned.map((r) => r._id);
+      for (const sw of await this.sweeps.find({ userId: uid, 'cells.runId': { $in: ids } }).lean()) {
+        for (const c of sw.cells) {
+          if (c.runId && !labels.has(String(c.runId))) {
+            labels.set(String(c.runId), `${c.axis} = ${String(c.value)}`);
+          }
+        }
+      }
+
+      // Anything not from a sweep is described by what it changed. The engine
+      // holds the defaults; if it cannot be reached the detector name is all
+      // there is, which is no worse than before and never blocks the query.
+      let defaults: Record<string, Record<string, unknown>> = {};
+      if (owned.some((r) => !labels.has(String(r._id)))) {
+        try {
+          const { strategies } = await this.engine.detectors();
+          for (const st of strategies as { name: string; params: { key: string; default: unknown }[] }[]) {
+            defaults[st.name] = Object.fromEntries(
+              (st.params ?? []).map((p) => [p.key, p.default]),
+            );
+          }
+        } catch {
+          defaults = {};
+        }
+      }
+
       for (const row of rows) {
         const id = row.keys[settingAt];
+        const run = owned.find((r) => String(r._id) === id);
         row.keys[settingAt] = labels.get(id)
-          ?? owned.find((r) => String(r._id) === id)?.detector
-          ?? id;
+          ?? (run
+            ? describeParams(
+              run.rulesSnapshot as Record<string, unknown>,
+              defaults[run.detector] ?? {},
+              run.detector,
+            )
+            : id);
       }
     }
 

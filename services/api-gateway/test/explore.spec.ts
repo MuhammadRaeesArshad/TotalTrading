@@ -1,5 +1,5 @@
 import {
-  keyExpr, pipelineFor, SESSION_BOUNDS, toRows, totalsOf,
+  describeParams, keyExpr, pipelineFor, SESSION_BOUNDS, toRows, totalsOf,
 } from '../src/backtest/explore';
 
 import type { ExploreQuery } from '../src/backtest/explore';
@@ -100,5 +100,38 @@ describe('toRows and totals', () => {
     expect(t.n).toBe(0);
     expect(t.winRate).toBe(0);
     expect(t.avgR).toBe(0);
+  });
+});
+
+describe('describeParams', () => {
+  const defaults = { ema_period: 21, atr_threshold: 0.5, sl_pips: 5, risk_reward: 2 };
+
+  it('names what was changed, not what the strategy is called', () => {
+    // "trend_engulf" on every row is what this exists to stop.
+    expect(describeParams({ ...defaults, ema_period: 34 }, defaults, 'trend_engulf'))
+      .toBe('ema_period = 34');
+  });
+
+  it('says so when a run is simply the defaults', () => {
+    expect(describeParams({ ...defaults }, defaults, 'trend_engulf'))
+      .toBe('trend_engulf · defaults');
+  });
+
+  it('keeps two and counts the rest', () => {
+    const p = { ...defaults, ema_period: 34, atr_threshold: 1.5, sl_pips: 9, risk_reward: 3 };
+    expect(describeParams(p, defaults, 'x')).toBe('ema_period = 34, atr_threshold = 1.5 +2 more');
+  });
+
+  it('leaves a per-pair map out of a table cell', () => {
+    const p = { ...defaults, trend_mode_by_pair: { EURUSD: 'h4_only' } };
+    expect(describeParams(p, defaults, 'smc_mtf')).toBe('smc_mtf · defaults');
+  });
+
+  it('falls back when there is nothing stored', () => {
+    expect(describeParams(null, defaults, 'smc_ob')).toBe('smc_ob');
+  });
+
+  it('does not call a value changed when it only differs in type of quoting', () => {
+    expect(describeParams({ ema_period: 21 }, defaults, 'x')).toBe('x · defaults');
   });
 });

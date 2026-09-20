@@ -182,3 +182,31 @@ export function totalsOf(rows: ExploreRow[]) {
     net: rows.reduce((a, r) => a + r.net, 0),
   };
 }
+
+/**
+ * A run's settings, said in as few words as carry the meaning.
+ *
+ * Grouping by setting and getting "trend_engulf" on every row says nothing —
+ * the point of the column is which setting this run moved and where to. A
+ * sweep knows that for its own cells; for anything else the only honest answer
+ * is what differs from the strategy's defaults.
+ */
+export function describeParams(
+  params: Record<string, unknown> | null | undefined,
+  defaults: Record<string, unknown>,
+  fallback: string,
+): string {
+  if (!params) return fallback;
+
+  const changed = Object.entries(params)
+    // A value equal to the default is not what makes this run different.
+    .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(defaults[k]))
+    // An object-valued setting (a per-pair map) does not fit a table cell.
+    .filter(([, v]) => v === null || typeof v !== 'object')
+    .map(([k, v]) => `${k} = ${String(v)}`);
+
+  if (!changed.length) return `${fallback} · defaults`;
+  // Two is what fits; past that the cell is wider than the numbers beside it.
+  if (changed.length <= 2) return changed.join(', ');
+  return `${changed.slice(0, 2).join(', ')} +${changed.length - 2} more`;
+}

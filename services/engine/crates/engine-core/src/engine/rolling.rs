@@ -326,3 +326,68 @@ impl Ema {
         (self.seen >= self.period).then_some(self.value)
     }
 }
+
+/// A value from `delay` pushes ago.
+///
+/// Slope is a difference between now and then, and "then" has to be kept
+/// somewhere. A fixed ring allocated once keeps the detector's per-bar
+/// allocation at zero, which is the rule every detector here follows.
+#[derive(Debug, Clone)]
+pub struct Lag {
+    buf: Vec<f64>,
+    head: usize,
+    seen: usize,
+}
+
+impl Lag {
+    pub fn new(delay: usize) -> Self {
+        assert!(delay > 0, "delay must be at least 1");
+        Lag { buf: vec![f64::NAN; delay + 1], head: 0, seen: 0 }
+    }
+
+    #[inline]
+    pub fn push(&mut self, value: f64) {
+        self.buf[self.head] = value;
+        self.head = (self.head + 1) % self.buf.len();
+        self.seen += 1;
+    }
+
+    /// `None` until `delay` values have gone past.
+    #[inline]
+    pub fn value(&self) -> Option<f64> {
+        (self.seen > self.buf.len() - 1).then(|| self.buf[self.head])
+    }
+
+    pub fn reset(&mut self) {
+        self.buf.iter_mut().for_each(|v| *v = f64::NAN);
+        self.head = 0;
+        self.seen = 0;
+    }
+}
+
+#[cfg(test)]
+mod lag_tests {
+    use super::Lag;
+
+    #[test]
+    fn a_lag_returns_the_value_that_many_pushes_ago() {
+        let mut lag = Lag::new(2);
+        lag.push(1.0);
+        assert_eq!(lag.value(), None, "nothing is two pushes old yet");
+        lag.push(2.0);
+        assert_eq!(lag.value(), None);
+        lag.push(3.0);
+        assert_eq!(lag.value(), Some(1.0));
+        lag.push(4.0);
+        assert_eq!(lag.value(), Some(2.0));
+    }
+
+    #[test]
+    fn a_lag_of_one_returns_the_previous_value() {
+        let mut lag = Lag::new(1);
+        lag.push(10.0);
+        assert_eq!(lag.value(), None);
+        lag.push(20.0);
+        assert_eq!(lag.value(), Some(10.0));
+    }
+}

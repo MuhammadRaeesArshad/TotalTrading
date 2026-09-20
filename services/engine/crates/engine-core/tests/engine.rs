@@ -657,3 +657,153 @@ fn per_symbol_capital_keeps_one_pairs_loss_off_another_pairs_sizing() {
         "own book: GBPUSD still has the full 10,000 — got {isolated}"
     );
 }
+
+// ------------------------------------------------ trend + engulfing, end to end
+
+/// Writes one series and returns it mapped.
+fn series(tag: &str, symbol: &str, tf: Timeframe, input: &[InputBar]) -> Arc<Bars> {
+    let dir = temp_dir(tag);
+    let path = dir.join(format!("{symbol}-{tf:?}.ttb"));
+    write_bars(&path, symbol, tf, input).unwrap();
+    Arc::new(Bars::open(&path).unwrap())
+}
+
+/// A rising market on M15 with H1 above it, and a bullish engulfing candle at
+/// the end. Every filter the strategy has must pass: the H1 EMA is climbing
+/// well over half an ATR per five bars, the last 20 M15 bars have moved more
+/// than 100 pips, and the engulfing body is far bigger than half an ATR.
+#[test]
+fn trend_engulfing_fires_on_an_engulfing_candle_in_an_uptrend() {
+    use engine_core::engine::strategies::trend_engulf::{TrendEngulfFactory, TrendEngulfParams};
+
+    const BASE: i64 = 1_699_999_200; // an exact hour, so H1 and M15 line up
+    let n = 240usize;
+
+    // M15: a steady climb of 6 pips a bar.
+    let mut m15: Vec<InputBar> = (0..n)
+        .map(|i| {
+            let c = 1.1000 + i as f64 * 0.0006;
+            InputBar {
+                time: BASE + i as i64 * 900,
+                open: c - 0.0002, high: c + 0.0002, low: c - 0.0004, close: c,
+                volume: 100, spread: 0,
+            }
+        })
+        .collect();
+
+    // The last two bars: a small down bar, then one that swallows it whole.
+    let pivot = 1.1000 + (n - 2) as f64 * 0.0006;
+    m15[n - 2] = InputBar {
+        time: BASE + (n - 2) as i64 * 900,
+        open: pivot + 0.0003, high: pivot + 0.0004, low: pivot - 0.0003, close: pivot - 0.0002,
+        volume: 100, spread: 0,
+    };
+    m15[n - 1] = InputBar {
+        time: BASE + (n - 1) as i64 * 900,
+        open: pivot - 0.0002, high: pivot + 0.0020, low: pivot - 0.0006, close: pivot + 0.0018,
+        volume: 100, spread: 0,
+    };
+
+    // H1: the same climb, one bar per hour.
+    let h1: Vec<InputBar> = (0..n / 4)
+        .map(|i| {
+            let c = 1.1000 + i as f64 * 0.0024;
+            InputBar {
+                time: BASE + i as i64 * 3_600,
+                open: c - 0.0008, high: c + 0.0008, low: c - 0.0016, close: c,
+                volume: 400, spread: 0,
+            }
+        })
+        .collect();
+
+    let base = series("te-m15", "EURUSD", Timeframe::M15, &m15);
+    let higher = series("te-h1", "EURUSD", Timeframe::H1, &h1);
+
+    let sim = config();
+    let request = RunRequest {
+        params: serde_json::Value::Null,
+        detector: "trend_engulf".into(),
+        from_ts: m15[0].time,
+        to_ts: m15[n - 1].time,
+        sim: sim.clone(),
+        capital: CapitalMode::Shared,
+    };
+    let tasks = vec![ScanTask { bars: base, higher: vec![higher], sim }];
+    let result = run(tasks, &request, &TrendEngulfFactory, &Progress::default()).unwrap();
+
+    assert_eq!(result.signals_generated, 1, "exactly the engulfing bar should fire");
+
+    // The signal fires on the last bar, so there is no bar to enter on — the
+    // run reports that rather than inventing a fill.
+    assert_eq!(result.skipped.no_entry_bar, 1);
+
+    // And the levels it asked for: stop a hair under the engulfing low, target
+    // at twice that distance.
+    let d = TrendEngulfParams::default();
+    let low = m15[n - 1].low;
+    let close = m15[n - 1].close;
+    let expected_stop = low - d.sl_pips * 0.0001;
+    let expected_target = close + d.risk_reward * (close - expected_stop);
+    assert!(expected_target > close && expected_stop < low);
+}
+
+/// The same candle, with the trend timeframe flat. Direction is the first gate,
+/// so nothing fires — a good-looking candle in a range is not a setup.
+#[test]
+fn trend_engulfing_stays_silent_when_the_higher_timeframe_is_going_nowhere() {
+    use engine_core::engine::strategies::trend_engulf::TrendEngulfFactory;
+
+    const BASE: i64 = 1_699_999_200;
+    let n = 240usize;
+
+    let mut m15: Vec<InputBar> = (0..n)
+        .map(|i| {
+            let c = 1.1000 + i as f64 * 0.0006;
+            InputBar {
+                time: BASE + i as i64 * 900,
+                open: c - 0.0002, high: c + 0.0002, low: c - 0.0004, close: c,
+                volume: 100, spread: 0,
+            }
+        })
+        .collect();
+    let pivot = 1.1000 + (n - 2) as f64 * 0.0006;
+    m15[n - 2] = InputBar {
+        time: BASE + (n - 2) as i64 * 900,
+        open: pivot + 0.0003, high: pivot + 0.0004, low: pivot - 0.0003, close: pivot - 0.0002,
+        volume: 100, spread: 0,
+    };
+    m15[n - 1] = InputBar {
+        time: BASE + (n - 1) as i64 * 900,
+        open: pivot - 0.0002, high: pivot + 0.0020, low: pivot - 0.0006, close: pivot + 0.0018,
+        volume: 100, spread: 0,
+    };
+
+    // H1 oscillates in a band: plenty of range, no EMA travel.
+    let h1: Vec<InputBar> = (0..n / 4)
+        .map(|i| {
+            let c = 1.1000 + if i % 2 == 0 { 0.0015 } else { -0.0015 };
+            InputBar {
+                time: BASE + i as i64 * 3_600,
+                open: c, high: c + 0.0010, low: c - 0.0010, close: c,
+                volume: 400, spread: 0,
+            }
+        })
+        .collect();
+
+    let base = series("te-flat-m15", "EURUSD", Timeframe::M15, &m15);
+    let higher = series("te-flat-h1", "EURUSD", Timeframe::H1, &h1);
+
+    let sim = config();
+    let request = RunRequest {
+        params: serde_json::Value::Null,
+        detector: "trend_engulf".into(),
+        from_ts: m15[0].time,
+        to_ts: m15[n - 1].time,
+        sim: sim.clone(),
+        capital: CapitalMode::Shared,
+    };
+    let tasks = vec![ScanTask { bars: base, higher: vec![higher], sim }];
+    let result = run(tasks, &request, &TrendEngulfFactory, &Progress::default()).unwrap();
+
+    assert_eq!(result.signals_generated, 0, "no direction means no trade");
+}

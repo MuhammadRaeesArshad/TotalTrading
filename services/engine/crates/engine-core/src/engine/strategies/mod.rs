@@ -8,3 +8,4 @@
 
 pub mod smc;
 pub mod smc_mtf;
+pub mod trend_engulf;

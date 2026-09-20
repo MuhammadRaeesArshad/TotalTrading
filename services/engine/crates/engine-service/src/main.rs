@@ -31,6 +31,7 @@ use engine_core::engine::detector::DetectorRegistry;
 use engine_core::engine::runner::{run, CapitalMode, RunRequest, ScanTask};
 use engine_core::engine::strategies::smc::SmcFactory;
 use engine_core::engine::strategies::smc_mtf::MtfFactory;
+use engine_core::engine::strategies::trend_engulf::TrendEngulfFactory;
 use engine_core::engine::sim::IntrabarPolicy;
 use engine_core::store::{cache_path, Bars};
 use engine_core::{CoreError, SimConfig, Timeframe, ENGINE_VERSION};
@@ -60,6 +61,7 @@ fn build_registry() -> DetectorRegistry {
     let mut registry = DetectorRegistry::new();
     registry.register(Box::new(SmcFactory::default()));
     registry.register(Box::new(MtfFactory::default()));
+    registry.register(Box::new(TrendEngulfFactory));
     registry
 }
 

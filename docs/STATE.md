@@ -18,6 +18,9 @@ a stale handoff is worse than none.
   (what a live account is, and the default) or gives each pair its own copy of
   it. Per-pair isolates a pair's edge from what the others were doing, which
   is what made a 28-pair run and a solo run of the same pair disagree.
+- **Three strategies.** `smc_ob`, `smc_mtf`, and `trend_engulf` — the last
+  ported from the user's earlier `finance-trader-backend` (D:aees), where
+  the EMA-slope trend detector and the engulfing entry had already proved out.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and
@@ -60,6 +63,9 @@ Known, and none of them are covered by a test:
   run, mark it "account blown" with the date. Not built — it changes what a
   stored backtest means, so it needs the user's yes.
 - **`trend_mode` per pair**, rather than per run, for `smc_mtf`.
+- **`trend_engulf`'s stop: 5 pips or 1.5 ATR?** The Python original's docstring
+  says one and its code does the other. The code is ported, since the code is
+  what ran — but which produced the results worth keeping is the user's call.
 
 ## Running it
 

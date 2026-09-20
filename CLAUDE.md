@@ -196,9 +196,15 @@ execution, under any circumstances.
 given in the conversation, stop and ask. No placeholder rules — a guessed rule propagates
 into live scanning and gets traded.
 
-Current strategies, both implemented: `smc_ob` (single timeframe, pipeline test,
-`2026-09-19-smc-order-blocks-design.md`) and `smc_mtf` (the user's own multi-timeframe
-strategy, `2026-09-20-smc-mtf-design.md`).
+Current strategies, all implemented: `smc_ob` (single timeframe, pipeline test,
+`2026-09-19-smc-order-blocks-design.md`), `smc_mtf` (the user's own multi-timeframe
+strategy, `2026-09-20-smc-mtf-design.md`) and `trend_engulf` (ported from the user's
+`finance-trader-backend`, `2026-09-20-trend-engulfing-design.md`).
+
+**A port is still a strategy.** Rules taken from working code elsewhere get the same
+treatment as rules given in conversation: written into a spec first, with every place the
+port deviates from the original stated and why. Code beats its own docstring when the two
+disagree, and the disagreement gets flagged rather than silently resolved.
 
 **Strategies own their settings.** A `DetectorFactory` declares its description, the
 timeframes it needs and a schema for its parameters; `GET /detectors` serves them and the

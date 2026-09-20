@@ -24,7 +24,7 @@ crates/
         window.rs             BarCtx, the no-lookahead gate
         align.rs              multi-timeframe mapping
         detector.rs           Detector + DetectorFactory + registry
-        strategies/           one module per strategy, e.g. smc.rs
+        strategies/           one module per strategy: smc.rs, smc_mtf.rs, trend_engulf.rs
         structure.rs          shared structure primitives (swings, zones)
         sim.rs                fills, exits, costs
         metrics.rs

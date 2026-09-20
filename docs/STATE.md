@@ -1,6 +1,6 @@
 # Where things stand
 
-Updated 20 Sep 2026. Read this after `CLAUDE.md` — that one holds the rules,
+Updated 20 Sep 2026 (frontend pass + calculation audit). Read this after `CLAUDE.md` — that one holds the rules,
 this one holds the situation. Keep it current when you finish a piece of work:
 a stale handoff is worse than none.
 
@@ -8,17 +8,20 @@ a stale handoff is worse than none.
 
 - **Auth, MT5 accounts, history import.** Imports run as background jobs with
   live progress, and are incremental — only bars the cache lacks are fetched.
-  Cached as of 20 Sep 2026: 28 pairs × M15, M30, H1, H4, D1 — 140 series, so
-  both strategies have everything they read.
+  Cached as of 20 Sep 2026: 145 series across 29 pairs on M15, M30, H1, H4 and
+  D1, so every strategy has what it reads. The Jobs page shows imports running
+  and finished; Summary shows the coverage.
 - **Two strategies.** `smc_ob` (single timeframe, a test of the pipeline) and
   `smc_mtf` (the user's own: H4+H1 direction, M15/M30 break of structure, order
   block entry). Each declares its own description, timeframes and settings;
   the New backtest form builds itself from that.
 - **Two capital modes.** A run either shares one balance across every pair
   (what a live account is, and the default) or gives each pair its own copy of
-  it. Per-pair isolates a pair's edge from what the others were doing, which
-  is what made a 28-pair run and a solo run of the same pair disagree.
-- **Three strategies.** `smc_ob`, `smc_mtf` (**v2**), and `trend_engulf` — the
+  it. Per-pair isolates a pair's edge from what the others were doing — but
+  **only under `sizing: compound`**. Under the `fixed` default the two modes
+  produce identical trades and differ only in what percentages are measured
+  against. See the audit section below.
+- **Three strategies.** `smc_ob` (v1), `smc_mtf` (**v3**), and `trend_engulf` (v1) — the
   last ported from the user's earlier `finance-trader-backend` (the local copy
   is at D:\raees), where the EMA-slope trend detector and the engulfing
   entry had already proved out. Both multi-timeframe strategies now read
@@ -39,16 +42,44 @@ a stale handoff is worse than none.
   pair, session, year, month or side, with a floor on how many trades a slice
   needs before it counts. Answers "in which session, on which pair, over four
   years, did this make money" without opening runs one at a time.
+- **The nav is no longer mostly placeholders.** Summary, Strategies and Jobs
+  are real pages, built entirely from endpoints that already existed. Their
+  stubs had claimed they were blocked on a strategy definition and a Redis job
+  queue — both had been built since, so the pages were describing a system
+  that no longer matched the one underneath them.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and
   Anatomy tabs.
+- **Strategies.** Every registered strategy, its version, the timeframes it
+  reads and a table of every setting it declares, with defaults and ranges.
+  Read from `GET /backtest/detectors` — the same schema the New backtest form
+  builds itself from — so a fourth strategy appears the moment its factory is
+  registered, with nothing written per strategy.
+- **Jobs.** Running imports, runs and sweeps with progress, plus finished
+  imports and failed runs. Polls while anything is live and stops when nothing
+  is. A sweep can be cancelled from here, which previously meant finding the
+  page that started it.
+- **Summary.** Cache coverage, completed-run totals, the best expectancy found
+  so far, and each service's reachability. Deliberately not "live performance":
+  nothing scans and execution is off, so open P&L is a number that cannot
+  exist yet.
 - **`ai-analysis`.** Wraps local Ollama; takes computed figures, returns prose.
-  Optional by rule 9 — everything works with it switched off.
+  Optional by rule 9 — everything works with it switched off. **Not reachable
+  from the UI**: the gateway holds only a health probe, with no route through
+  to its `POST /analyze`.
 
 ## Not built
 
 - **Live scanning.** The engine can do it (same `Detector`), nothing drives it.
+- **Positions, Journal, System logs, AI analysis** — the four pages still on
+  `ComingSoon`, and each is genuinely blocked, not merely unbuilt. Positions
+  needs `/positions` and `/history` on the connector, which serves only
+  `/account`, `/symbols` and `/candles`. Journal needs MT5 history
+  reconciliation and somewhere to keep a note. System logs needs something to
+  write the `system_logs` collection, which nothing does. AI analysis needs one
+  gateway route and somewhere to keep what comes back. Each stub now says
+  exactly that — check the claim before adding to that file.
 - **Order execution.** Off, and staying off (rule 8).
 - **`packages/contracts`.** Documented in `CLAUDE.md`, deliberately not created;
   needs npm workspaces, which changes every service Dockerfile.
@@ -62,19 +93,35 @@ Gold is now synced and priced: it was rejected by the gateway's pair filter
 point size — a thousand times too small, which sizes every gold position a
 thousand times too large.
 
-**It needs the account reconnected first.** Instruments are classified when an
-account connects — "the one place symbols enter the system" — so the 6 XAU rows
-already in Mongo still carry the old `instrumentClass: 'other'` and stay hidden
-until a reconnect re-derives it. Press **Connect** on the Accounts page (MT5
-must be running), then import, then it appears in the New backtest picker,
-which lists what is cached rather than what exists.
+**Its history is imported.** As of 20 Sep the cache holds XAUUSD on all five
+timeframes — 29 pairs × 5 = 145 series — so it is in the New backtest picker,
+which lists what is cached rather than what exists. (If it ever disappears
+from the picker again, the cause is instrument classification: symbols are
+classified when an account connects, so stale `instrumentClass: 'other'` rows
+stay hidden until a reconnect re-derives them.)
 
-**Its history still has to be imported**, and `trend_engulf` will mostly skip
-it until its pip-denominated settings are revisited: on gold a "pip" is 0.01,
-so `sl_pips` 5 is a $0.05 stop that the cost floor rejects, and
+**`trend_engulf` will still mostly skip it** until its pip-denominated settings
+are revisited: on gold a "pip" is 0.01, so `sl_pips` 5 is a $0.05 stop that the
+cost floor rejects, and
 `consolidation_pips` 100 is a $1 move that gold clears constantly. Those
 defaults were tuned for FX. Changing them per instrument changes what a rule
 means, so it needs a decision rather than a guess.
+
+## Costs a backtest charges
+
+Spread (per bar, plus any extra set), slippage, round-turn commission, and
+**overnight financing**. Swap is charged per night held, triple on Wednesday
+because spot settles two business days out, and never on Saturday or Sunday
+when there is no rollover.
+
+The rates are the broker's own — `swap_long` and `swap_short` from the
+terminal, stored per instrument and sent to the engine with the run. There is
+no guessing a carry rate, so a symbol whose rates are not stored is financed at
+zero and the trade panel says "none charged" rather than letting it pass as
+free. **Reconnect the account** to fetch them.
+
+The same channel now carries the broker's real point size, contract size and
+volume steps, which the engine previously guessed from the symbol's name.
 
 ## Thin spots
 
@@ -91,13 +138,64 @@ Known, and none of them are covered by a test:
   `docker compose -f infra/docker/docker-compose.yml build web && … up -d web`.
   Same for the gateway. Easy hour to lose.
 - **Verdict thresholds are global**, not per strategy, so `smc_mtf` is judged
-  against criteria written for `smc_ob`.
-- **The engine guesses point size; the gateway already knows it.** Every
-  instrument row carries the broker's real `pointSize`, `contractSize` and
-  `volumeMin`, but `engine-service/src/instruments.rs` re-derives its own from
-  the symbol name. They agree today, including on gold. They will not agree
-  forever. The honest fix is the gateway sending per-symbol sim values with the
-  run request, and its own module doc has said so since it was written.
+  against criteria written for `smc_ob`. They are now applied to the filtered
+  trades, so a narrowed view is judged on its own sample — and a narrow one
+  will fail the 100-trade criterion, which is the criterion doing its job.
+- **Swap is zero until the account is reconnected.** The rates are stored on
+  instrument sync, and instruments synced before this existed have none.
+
+## From the 20 Sep audit
+
+Two were fixed, with a test shown failing against the old code first. The rest
+are recorded rather than changed, because each needs a decision.
+
+**Fixed.**
+
+- **Max drawdown percent was the percentage at the largest *currency* fall**,
+  not the largest percentage fall. The two need not coincide: a 20% dip early
+  on a small balance is worse than a bigger dollar dip later against a much
+  higher peak, and only the latter was ever reported. Now tracked
+  independently. **Engine crate went to 0.3.0** (rule 6), so runs stored before
+  this carry `engineVersion` 0.2.0, hold the old figure, and are not reused for
+  a new request.
+- **The Verdict tab ignored the page filter** for four of its nine criteria.
+  Trade count, profit factor, expectancy and drawdown read `run.metrics` —
+  which describes the whole run and exists on every completed one — so
+  narrowing to London judged all 1,240 trades while the Trades tab beside it
+  showed 87. The run is no longer a parameter of `verdict()` at all, so the
+  unfiltered figures are unreachable rather than merely unused.
+- **The equity curve's closing point carried the previous sample's timestamp.**
+  On a run long enough to be sampled, the last point sat at the wrong time.
+
+**Found, not changed — each needs a decision.**
+
+- **`capital` is close to cosmetic now that `sizing` defaults to `fixed`.**
+  Under `fixed`, position size is a percent of `initial_balance` whatever book
+  the task draws on, so `shared` and `per_symbol` produce *identical trades*.
+  All that differs is the denominator metrics are measured against — final
+  equity and drawdown percent. The isolation the mode was built for only
+  happens under `compound`. The description at the top of this file was written
+  when `compound` was the only mode and now overstates it.
+- **`EndOfData` exits pay no costs.** Positions still open at the end close at
+  the last bar's close with no spread or slippage, unlike every other exit, and
+  nothing counts how many trades that was. Rule 5 says costs are pessimistic by
+  default; this is the one exit that isn't. The count is derivable per trade
+  (`exitReason`) but appears in no metric.
+- **`max_open_per_symbol` is enforced per task, not per symbol.** Not reachable
+  today — a request carries one base timeframe, so one task per symbol — but
+  the name promises something the code would not deliver if that changed.
+- **`deployedCapital` counts `run.symbols.length`; the engine counts symbols
+  that produced tasks.** A symbol requested but with no cached bars makes the
+  UI's denominator larger than the engine's, and every percentage on the page
+  correspondingly smaller.
+- **Session buckets are fixed UTC hours.** London is UTC+0 in winter and UTC+1
+  in summer, so for part of the year the London and Overlap buckets are an hour
+  off from the session they name. A deliberate simplification, but an undocumented
+  one, and session is a dimension Explore groups by.
+- **`cost_offset`'s docstring says "half-spread"; it applies the full spread.**
+  The total is right — bars are bid, so a full spread on entry and none on a
+  limit-order take profit is the correct round turn — but the comment describes
+  something the code does not do.
 
 ## Settled, 20 Sep
 

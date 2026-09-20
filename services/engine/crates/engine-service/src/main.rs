@@ -252,7 +252,9 @@ async fn start_run(
     // is far better reported now than three minutes into a scan.
     let mut tasks = Vec::with_capacity(spec.symbols.len());
     for symbol in &spec.symbols {
-        let task = build_task(&state.bar_cache, symbol, timeframe, &higher, &sim)
+        let task = build_task(
+            &state.bar_cache, symbol, timeframe, &higher, &sim, spec.symbol_sim.get(symbol),
+        )
             .map_err(|e| ApiError::unprocessable(e.to_string()))?;
         tasks.push(task);
     }
@@ -485,6 +487,7 @@ fn build_task(
     timeframe: Timeframe,
     higher: &[Timeframe],
     base_sim: &SimConfig,
+    broker: Option<&crate::jobs::SymbolSim>,
 ) -> Result<ScanTask, CoreError> {
     let bars = Arc::new(Bars::open(cache_path(cache, symbol, timeframe)?)?);
     let higher = higher
@@ -492,11 +495,21 @@ fn build_task(
         .map(|&tf| Bars::open(cache_path(cache, symbol, tf)?).map(Arc::new))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(ScanTask {
-        bars,
-        higher,
-        sim: instruments::default_sim_for(symbol, base_sim),
-    })
+    // The engine's guess first, then whatever the broker actually says. Swap
+    // only ever arrives this way — there is no guessing a carry rate.
+    let mut sim = instruments::default_sim_for(symbol, base_sim);
+    if let Some(b) = broker {
+        if let Some(v) = b.point_size { sim.point_size = v; }
+        if let Some(v) = b.point_value_per_lot { sim.point_value_per_lot = v; }
+        if let Some(v) = b.volume_min { sim.volume_min = v; }
+        if let Some(v) = b.volume_max { sim.volume_max = v; }
+        if let Some(v) = b.volume_step { sim.volume_step = v; }
+        if let Some(v) = b.swap_long_points { sim.swap_long_points = v; }
+        if let Some(v) = b.swap_short_points { sim.swap_short_points = v; }
+        if let Some(v) = b.swap_triple_weekday { sim.swap_triple_weekday = v; }
+    }
+
+    Ok(ScanTask { bars, higher, sim })
 }
 
 /// How the balance is split across pairs. Absent means one shared account,

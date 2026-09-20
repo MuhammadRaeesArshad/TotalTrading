@@ -46,6 +46,10 @@ pub struct RunSpec {
     pub to_ts: i64,
     #[serde(default)]
     pub sim: Option<SimOverrides>,
+    /// Per-symbol broker figures, keyed by symbol. Anything absent keeps the
+    /// engine's own default for that instrument.
+    #[serde(default)]
+    pub symbol_sim: std::collections::HashMap<String, SymbolSim>,
 }
 
 /// Simulation knobs a caller may set. Anything omitted keeps the per-symbol
@@ -68,6 +72,26 @@ pub struct SimOverrides {
     /// so the account cannot run out — or "compound", which risks a percent of
     /// equity as it stands and can be wiped out.
     pub sizing: Option<String>,
+}
+
+/// What the broker says about one instrument.
+///
+/// The engine guesses point size from the symbol's name, which is right for
+/// the majors and a guess everywhere else. The gateway already stores the
+/// terminal's own figures, so anything it sends here wins — and swap it must
+/// send, because no rule of thumb produces a carry rate.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SymbolSim {
+    pub point_size: Option<f64>,
+    pub point_value_per_lot: Option<f64>,
+    pub volume_min: Option<f64>,
+    pub volume_max: Option<f64>,
+    pub volume_step: Option<f64>,
+    /// Points per lot per night. Negative is a charge.
+    pub swap_long_points: Option<f64>,
+    pub swap_short_points: Option<f64>,
+    /// 0 is Sunday.
+    pub swap_triple_weekday: Option<u8>,
 }
 
 #[derive(Debug, Serialize)]

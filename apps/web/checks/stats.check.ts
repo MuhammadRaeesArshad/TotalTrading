@@ -106,22 +106,13 @@ assert.equal(verdict(trades, 10_000, optimistic).find((c) => c.id === 'intrabar'
 
 // --- the verdict judges what survived the filter, not the whole run --------
 // Four criteria used to read `run.metrics`, which describes the unfiltered run
-// and exists on every completed one. Narrowing to one pair left the headline
-// trade count, profit factor, expectancy and drawdown judging every trade
-// while the Trades tab beside them showed a handful.
+// and exists on every completed one, so narrowing to one pair left the trade
+// count, profit factor, expectancy and drawdown judging every trade while the
+// Trades tab beside them showed a handful. The run is no longer a parameter,
+// which is what makes that unreachable rather than merely fixed.
 {
-  const metrics = {
-    totalTrades: 900, wins: 500, losses: 400, winRate: 55.6, netProfit: 9_000,
-    grossProfit: 20_000, grossLoss: 11_000, profitFactor: 1.82, expectancy: 10,
-    expectancyR: 0.4, maxDrawdown: 300, maxDrawdownPct: 3, sharpe: 0.2,
-    avgWin: 40, avgLoss: 27.5, longestLosingStreak: 4, longestWinningStreak: 6,
-    finalEquity: 19_000, ambiguousExits: 0,
-  };
-  const run = {
-    initialBalance: 10_000, symbols: ['EURUSD', 'GBPUSD'], capital: 'shared', metrics,
-  } as unknown as Run;
-
-  // Two losers on one pair: nothing like the stored run's 900 trades at 1.82.
+  // Two losers on one pair — nothing like a 900-trade run at a profit factor
+  // of 1.82, which is what the stored metrics would have reported.
   const narrowed = [
     trade({ symbol: 'GBPUSD', exitTime: '2024-03-05T12:00:00Z', netProfit: -100, rMultiple: -1 }),
     trade({ symbol: 'GBPUSD', exitTime: '2024-03-06T12:00:00Z', netProfit: -100, rMultiple: -1 }),
@@ -132,7 +123,7 @@ assert.equal(verdict(trades, 10_000, optimistic).find((c) => c.id === 'intrabar'
     return c;
   };
 
-  assert.equal(by('sample').actual, '2', 'trade count is the filtered one');
+  assert.equal(by('sample').actual, '2', 'the filtered trade count');
   // Zero gross profit over a real gross loss is a profit factor of 0 — a fail,
   // not an unknown. Same rule as the engine's.
   assert.equal(by('pf').actual, '0.00');
@@ -141,14 +132,13 @@ assert.equal(verdict(trades, 10_000, optimistic).find((c) => c.id === 'intrabar'
   assert.equal(by('dd').actual, '2.0%', 'drawdown walked over the filtered trades');
   assert.equal(by('dd').status, 'pass');
 
-  // With no filter the two agree — the whole point of dropping the fallback is
-  // that recomputing is not a different answer, only a correct one.
+  // Recomputing is not a different answer from the engine's, only a correct
+  // one: +2000 over -1000 is a profit factor of 2 either way.
   const all = [
     trade({ exitTime: '2024-03-05T12:00:00Z', netProfit: 2_000, rMultiple: 2 }),
     trade({ exitTime: '2024-03-06T12:00:00Z', netProfit: -1_000, rMultiple: -1 }),
   ];
-  assert.equal(verdict(all, 10_000).find((x) => x.id === 'pf')?.actual, '2.00',
-    '+2000 over -1000 is a profit factor of 2, recomputed from the trades alone');
+  assert.equal(verdict(all, 10_000).find((x) => x.id === 'pf')?.actual, '2.00');
 }
 
 console.log('stats.check: all assertions passed');

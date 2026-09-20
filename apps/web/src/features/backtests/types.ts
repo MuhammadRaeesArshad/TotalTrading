@@ -93,6 +93,8 @@ export interface Trade {
   takeProfit: number | null;
   grossProfit: number;
   commission: number;
+  /** Overnight financing. Negative is a cost; zero if rates were unknown. */
+  swap?: number;
   netProfit: number;
   rMultiple: number | null;
   exitReason: ExitReason | null;

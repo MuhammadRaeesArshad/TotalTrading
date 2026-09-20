@@ -72,6 +72,9 @@ export class Trade {
 
   @Prop({ default: 0 }) grossProfit: number;
   @Prop({ default: 0 }) commission: number;
+
+  /** Overnight financing over the life of the trade. Negative is a cost, and
+   *  zero means the broker's rates were not known when this ran. */
   @Prop({ default: 0 }) swap: number;
   @Prop({ default: 0 }) netProfit: number;
   @Prop({ default: null }) rMultiple: number | null;

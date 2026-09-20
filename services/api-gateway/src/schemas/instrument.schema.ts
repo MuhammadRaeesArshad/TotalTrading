@@ -43,6 +43,15 @@ export class Instrument {
   @Prop({ default: null }) volumeMax: number | null;
   @Prop({ default: null }) volumeStep: number | null;
 
+  /** What the broker charges to hold this overnight, in points per lot per
+   *  night. Negative is a cost; one side of a carry pair is usually positive.
+   *  No rule of thumb produces these, so a backtest is only honest about
+   *  financing once they are stored. */
+  @Prop({ default: null }) swapLong: number | null;
+  @Prop({ default: null }) swapShort: number | null;
+  /** Weekday charged triple, 0 = Sunday. Wednesday for spot FX. */
+  @Prop({ default: null }) swapTripleWeekday: number | null;
+
   /** Whether the symbol is visible in Market Watch — hidden symbols return no candles. */
   @Prop({ default: false })
   selected: boolean;

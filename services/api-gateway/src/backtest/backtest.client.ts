@@ -72,6 +72,17 @@ export interface EngineRunSpec {
     capital?: 'shared' | 'per_symbol';
     sizing?: 'fixed' | 'compound';
   };
+  /** Broker figures per symbol. Swap only ever reaches the engine this way. */
+  symbol_sim?: Record<string, {
+    point_size?: number;
+    point_value_per_lot?: number;
+    volume_min?: number;
+    volume_max?: number;
+    volume_step?: number;
+    swap_long_points?: number;
+    swap_short_points?: number;
+    swap_triple_weekday?: number;
+  }>;
 }
 
 export interface EngineMetrics {
@@ -111,6 +122,7 @@ export interface EngineTrade {
   exit_reason: 'stop_loss' | 'take_profit' | 'end_of_data';
   gross_profit: number;
   commission: number;
+  swap?: number;
   net_profit: number;
   r_multiple: number;
   ambiguous_exit: boolean;

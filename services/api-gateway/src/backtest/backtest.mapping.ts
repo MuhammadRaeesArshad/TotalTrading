@@ -101,7 +101,7 @@ export function mapTrade(
     takeProfit: t.take_profit,
     grossProfit: t.gross_profit,
     commission: t.commission,
-    swap: 0,
+    swap: t.swap ?? 0,
     netProfit: t.net_profit,
     rMultiple: finiteOrNull(t.r_multiple),
     exitReason: EXIT_REASONS[t.exit_reason] ?? null,

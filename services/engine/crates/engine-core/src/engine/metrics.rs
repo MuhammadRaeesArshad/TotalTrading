@@ -272,6 +272,7 @@ mod tests {
             exit_reason: ExitReason::StopLoss,
             gross_profit: net,
             commission: 0.0,
+            swap: 0.0,
             net_profit: net,
             r_multiple: net / 100.0,
             ambiguous_exit: false,

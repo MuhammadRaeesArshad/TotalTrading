@@ -27,6 +27,11 @@ export interface Mt5SymbolInfo {
   volume_min: number;
   volume_max: number;
   volume_step: number;
+  /** Overnight financing, points per lot per night. Negative is a charge. */
+  swap_long?: number;
+  swap_short?: number;
+  /** Weekday charged triple, 0 = Sunday. */
+  swap_triple_weekday?: number;
   selected: boolean;
   trade_allowed: boolean;
 }

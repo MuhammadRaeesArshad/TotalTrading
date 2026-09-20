@@ -82,6 +82,10 @@ export function TradePanel({ runId, trade }: { runId: string; trade: Trade }) {
           <dt>Exit</dt><dd>{trade.exitPrice.toFixed(dp)} · {fmtWhen(trade.exitTime)}</dd>
           <dt>Size</dt><dd>{trade.volume.toFixed(2)} lots</dd>
           <dt>Commission</dt><dd>${trade.commission.toFixed(2)}</dd>
+          <dt>Swap</dt>
+          <dd className={moneyClass(trade.swap)}>
+            {trade.swap ? fmtMoney(trade.swap) : <span className="dimmer">none charged</span>}
+          </dd>
         </dl>
 
         {detailKeys.length > 0 && (

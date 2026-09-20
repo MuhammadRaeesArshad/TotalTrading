@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SESSIONS } from '../stats';
-import { activeCount, isEmptyFilter, TradeFilter } from '../filter';
+import { activeCount, EMPTY_FILTER, isEmptyFilter, TradeFilter } from '../filter';
 import { fmtR, moneyClass } from '../fmt';
 import type { Trade } from '../types';
 
@@ -26,7 +26,14 @@ export function FilterBar({
   onChange: (next: TradeFilter) => void;
 }) {
   const [openPairs, setOpenPairs] = useState(false);
+  const [openMonths, setOpenMonths] = useState(false);
   const pairs = useMemo(() => [...new Set(all.map((t) => t.symbol))].sort(), [all]);
+  // Only months that exist: offering an empty one invites a filter that
+  // silently matches nothing.
+  const months = useMemo(
+    () => [...new Set(all.map((t) => t.exitTime.slice(0, 7)))].sort(),
+    [all],
+  );
   const set = (patch: Partial<TradeFilter>) => onChange({ ...value, ...patch });
 
   const toggle = (list: string[], v: string) =>
@@ -45,6 +52,12 @@ export function FilterBar({
           {value.pairs.length === 0 ? 'All pairs'
             : value.pairs.length === 1 ? value.pairs[0]
               : `${value.pairs.length} pairs`}
+        </button>
+
+        <button className={`sel selbtn${value.months.length ? ' on' : ''}`}
+          aria-expanded={openMonths} onClick={() => setOpenMonths((o) => !o)}>
+          {value.months.length === 0 ? 'All months'
+            : `${value.months.length} month${value.months.length === 1 ? '' : 's'} ${value.monthsMode === 'exclude' ? 'excluded' : 'only'}`}
         </button>
 
         <select className="sel" aria-label="Side" value={value.side}
@@ -67,9 +80,7 @@ export function FilterBar({
           onChange={(e) => set({ to: e.target.value })} />
 
         {!isEmptyFilter(value) && (
-          <button className="btn3" onClick={() => onChange({
-            pairs: [], sessions: [], side: '', result: '', from: '', to: '',
-          })}>
+          <button className="btn3" onClick={() => onChange(EMPTY_FILTER)}>
             Clear {n === 1 ? 'filter' : `all ${n}`}
           </button>
         )}
@@ -95,6 +106,27 @@ export function FilterBar({
           {' · '}<span className={moneyClass(sumR)}>{fmtR(sumR, 1)}</span>
         </span>
       </div>
+
+      {openMonths && (
+        <div className="filterbar-pairs">
+          <button className="btn3" onClick={() => set({ months: [] })}>All</button>
+          {/* Naming one bad month is easier than naming the thirty-five good
+              ones around it, so the same list can mean keep or drop. */}
+          <button className="btn3"
+            onClick={() => set({ monthsMode: value.monthsMode === 'exclude' ? 'include' : 'exclude' })}>
+            {value.monthsMode === 'exclude' ? 'excluding these' : 'only these'}
+          </button>
+          {months.map((m) => {
+            const on = value.months.includes(m);
+            return (
+              <button key={m} className={`chip${on ? ' on' : ''}`} aria-pressed={on}
+                onClick={() => set({ months: toggle(value.months, m) })}>
+                {m}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {openPairs && (
         <div className="filterbar-pairs">

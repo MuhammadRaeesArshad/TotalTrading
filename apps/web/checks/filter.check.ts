@@ -78,3 +78,33 @@ assert.deepEqual(toParams(f()), {});
 assert.equal(fromParams((k) => (k === 'side' ? 'sideways' : null)).side, '');
 
 console.log('filter.check: all assertions passed');
+
+// --- months, kept or dropped ----------------------------------------------
+// By exit month, matching the heatmap. Excluding is the useful direction:
+// naming one catastrophic month beats naming the thirty-five around it.
+{
+  const m = (exitTime: string) => trade({ exitTime });
+  const across = [m('2024-01-15T00:00:00Z'), m('2024-02-15T00:00:00Z'), m('2024-03-15T00:00:00Z')];
+
+  assert.equal(applyFilter(across, f({ months: ['2024-02'] })).length, 1);
+  assert.equal(
+    applyFilter(across, f({ months: ['2024-02'], monthsMode: 'exclude' })).length,
+    2,
+    'excluding one month keeps the other two',
+  );
+  assert.equal(applyFilter(across, f({ months: ['2024-01', '2024-03'] })).length, 2);
+  // An empty list means every month, whichever mode it is in.
+  assert.equal(applyFilter(across, f({ months: [], monthsMode: 'exclude' })).length, 3);
+
+  assert.equal(activeCount(f({ months: ['2024-02'] })), 1);
+  assert.ok(!isEmptyFilter(f({ months: ['2024-02'] })));
+
+  // Round-trips through the URL, mode included.
+  const withMonths = f({ months: ['2024-01', '2024-02'], monthsMode: 'exclude' });
+  const p2 = toParams(withMonths);
+  assert.deepEqual(fromParams((k) => p2[k] ?? null), withMonths);
+  // The mode is only written when it changes what the list means.
+  assert.equal(toParams(f({ months: ['2024-01'] })).monthsMode, undefined);
+}
+
+console.log('filter.check: months ok');

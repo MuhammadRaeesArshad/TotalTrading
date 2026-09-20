@@ -36,6 +36,18 @@ pub struct SimConfig {
     pub sizing: SizingMode,
     /// Round-turn commission per lot, in account currency.
     pub commission_per_lot: f64,
+    /// Overnight financing for a long, in points per lot per night. Negative
+    /// is a charge, which is the usual direction. The broker's own figure —
+    /// see `mt5-connector`'s `swap_long`, which is where it comes from.
+    pub swap_long_points: f64,
+    /// The same for a short. Positive on one side of a carry pair.
+    pub swap_short_points: f64,
+    /// Hour of the rollover charge, UTC. 22:00 is 17:00 New York outside DST,
+    /// which is when the spot market rolls.
+    pub swap_rollover_hour: i64,
+    /// Weekday charged triple, 0 being Sunday. Wednesday for spot FX, because
+    /// settlement is two business days out and that night carries the weekend.
+    pub swap_triple_weekday: u8,
     /// Extra spread in points beyond what the bar recorded. Broker spread
     /// widens around news and rollover in ways bar data flattens out.
     pub extra_spread_points: f64,
@@ -64,6 +76,15 @@ impl Default for SimConfig {
             risk_percent: 1.0,
             sizing: SizingMode::Fixed,
             commission_per_lot: 7.0,
+            // Zero until the broker's real rates are wired through per symbol.
+            // Unlike spread and commission there is no sensible pessimistic
+            // guess — swap is positive on one side of some pairs — and
+            // inventing one would be worse than reporting none. The UI says
+            // when it is zero rather than letting it pass as free.
+            swap_long_points: 0.0,
+            swap_short_points: 0.0,
+            swap_rollover_hour: 22,
+            swap_triple_weekday: 3,
             extra_spread_points: 0.0,
             slippage_points: 0.0,
             point_size: 0.00001,
@@ -127,6 +148,10 @@ pub struct Trade {
     pub exit_reason: ExitReason,
     pub gross_profit: f64,
     pub commission: f64,
+    /// Overnight financing paid over the life of the trade. Negative is a
+    /// cost. Zero when the broker's rates were not supplied.
+    #[serde(default)]
+    pub swap: f64,
     pub net_profit: f64,
     /// Result in multiples of the risk taken. The only cross-pair comparable
     /// number a trade log has.
@@ -321,7 +346,22 @@ pub fn close_position(
     let moved = (exit_price - position.entry_price) * position.direction.sign();
     let points = moved / config.point_size;
     let gross = points * config.point_value_per_lot * position.volume;
-    let net = gross - position.commission;
+
+    // Financing for every night the position stayed open. Costs nothing on a
+    // trade that opened and closed the same day, and dominates one held for
+    // weeks — which is exactly why leaving it out flatters slow strategies.
+    let rate = match position.direction {
+        Direction::Long => config.swap_long_points,
+        Direction::Short => config.swap_short_points,
+    };
+    let swap = swap_nights(
+        position.entry_time,
+        bar.time,
+        config.swap_rollover_hour,
+        config.swap_triple_weekday,
+    ) * rate * config.point_value_per_lot * position.volume;
+
+    let net = gross - position.commission + swap;
 
     // R is measured against the risk taken, not the nominal stop distance, so
     // slippage on entry shows up in the number.
@@ -354,6 +394,7 @@ pub fn close_position(
         exit_reason: reason,
         gross_profit: gross,
         commission: position.commission,
+        swap,
         net_profit: net,
         r_multiple,
         ambiguous_exit: ambiguous,
@@ -370,4 +411,116 @@ fn round_to(value: f64, step: f64) -> f64 {
         return value;
     }
     (value / step).round() * step
+}
+
+/// Rollover instants a position was open across, weighted.
+///
+/// A position held overnight is financed, and that charge is the cost most
+/// often left out of a backtest — it does not show on any bar, and a strategy
+/// holding for days can be paying more in swap than in spread.
+///
+/// Counting rules, which are the broker's and not ours:
+/// - A charge lands at the rollover hour, once per night, for each night the
+///   position is still open. Opening and closing inside one day costs nothing.
+/// - **Wednesday pays triple.** Spot settles two business days out, so the
+///   Wednesday rollover carries the weekend's financing with it.
+/// - Saturday and Sunday have no rollover, because the market is shut. The
+///   Wednesday triple is what pays for those days.
+///
+/// Returns the number of nights, weighted — 3.0 for one Wednesday night.
+pub fn swap_nights(entry_ts: i64, exit_ts: i64, rollover_hour: i64, triple_weekday: u8) -> f64 {
+    if exit_ts <= entry_ts {
+        return 0.0;
+    }
+
+    const DAY: i64 = 86_400;
+    let first_day = entry_ts.div_euclid(DAY);
+    let last_day = exit_ts.div_euclid(DAY);
+
+    let mut nights = 0.0;
+    for day in first_day..=last_day {
+        let instant = day * DAY + rollover_hour * 3_600;
+        // Strictly after entry: a position opened at the rollover instant has
+        // not been held overnight. Up to and including exit.
+        if instant <= entry_ts || instant > exit_ts {
+            continue;
+        }
+        match weekday(day) {
+            // Shut. The Wednesday triple covers these.
+            0 | 6 => continue,
+            w if w == triple_weekday => nights += 3.0,
+            _ => nights += 1.0,
+        }
+    }
+    nights
+}
+
+/// Day of the week for a day index since the epoch. 0 is Sunday.
+///
+/// 1 January 1970 was a Thursday, which is 4 counting from Sunday.
+#[inline]
+fn weekday(days_since_epoch: i64) -> u8 {
+    (days_since_epoch + 4).rem_euclid(7) as u8
+}
+
+#[cfg(test)]
+mod swap_tests {
+    use super::{swap_nights, weekday};
+
+    /// 1 Jan 1970 was a Thursday; 4 Jan 1970 a Sunday.
+    #[test]
+    fn the_epoch_was_a_thursday() {
+        assert_eq!(weekday(0), 4);
+        assert_eq!(weekday(3), 0);
+        assert_eq!(weekday(2), 6);
+    }
+
+    // Monday 6 Jan 2025, 00:00 UTC.
+    const MON: i64 = 1_736_121_600;
+    const DAY: i64 = 86_400;
+    const HOUR: i64 = 3_600;
+
+    #[test]
+    fn a_trade_closed_the_same_day_is_never_financed() {
+        assert_eq!(swap_nights(MON + 8 * HOUR, MON + 16 * HOUR, 22, 3), 0.0);
+    }
+
+    #[test]
+    fn one_night_held_is_one_charge() {
+        // Monday morning to Tuesday morning crosses Monday's rollover once.
+        assert_eq!(swap_nights(MON + 8 * HOUR, MON + DAY + 8 * HOUR, 22, 3), 1.0);
+    }
+
+    #[test]
+    fn opening_exactly_at_rollover_has_not_been_held_overnight() {
+        assert_eq!(swap_nights(MON + 22 * HOUR, MON + 23 * HOUR, 22, 3), 0.0);
+    }
+
+    #[test]
+    fn wednesday_costs_three_nights() {
+        // Wednesday 8 Jan is MON + 2 days. Hold across its rollover only.
+        let wed_morning = MON + 2 * DAY + 8 * HOUR;
+        assert_eq!(swap_nights(wed_morning, wed_morning + DAY, 22, 3), 3.0);
+    }
+
+    #[test]
+    fn a_weekend_is_not_charged_twice() {
+        // Friday morning to Monday morning: Friday's rollover only, because
+        // Saturday and Sunday have none. The weekend was paid on Wednesday.
+        let fri = MON + 4 * DAY + 8 * HOUR;
+        assert_eq!(swap_nights(fri, fri + 3 * DAY, 22, 3), 1.0);
+    }
+
+    #[test]
+    fn a_full_week_costs_seven_nights_not_five() {
+        // Mon 08:00 to the following Mon 08:00: Mon, Tue, Thu, Fri at 1 and
+        // Wednesday at 3 — seven, which is the week's real financing.
+        assert_eq!(swap_nights(MON + 8 * HOUR, MON + 7 * DAY + 8 * HOUR, 22, 3), 7.0);
+    }
+
+    #[test]
+    fn a_backwards_or_instant_trade_is_free() {
+        assert_eq!(swap_nights(MON, MON, 22, 3), 0.0);
+        assert_eq!(swap_nights(MON + DAY, MON, 22, 3), 0.0);
+    }
 }

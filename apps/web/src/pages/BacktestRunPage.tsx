@@ -4,9 +4,9 @@ import { ApiError } from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { backtestApi } from '../features/backtests/api';
 import { useRun, useTrades } from '../features/backtests/hooks';
-import type { Run } from '../features/backtests/types';
+import type { Run, Trade } from '../features/backtests/types';
 import { fmtDate, fmtMoney, fmtPct, fmtR, moneyClass } from '../features/backtests/fmt';
-import { deployedCapital } from '../features/backtests/stats';
+import { deployedCapital, summarize } from '../features/backtests/stats';
 import { applyFilter, capitalFor, fromParams, toParams } from '../features/backtests/filter';
 import type { TradeFilter } from '../features/backtests/filter';
 import { FilterBar } from '../features/backtests/components/FilterBar';
@@ -168,8 +168,6 @@ export function BacktestRunPage() {
         <div className="alert err">This run failed: {run.error ?? 'no reason given'}.</div>
       )}
 
-      {run?.status === 'completed' && run.metrics && <StatsStrip run={run} />}
-
       {run?.status === 'completed' && (
         <>
           <div className="tabs2" role="tablist" aria-label="Views">
@@ -180,6 +178,11 @@ export function BacktestRunPage() {
 
           {trades && trades.length > 0 && (
             <FilterBar all={trades} shown={filtered} value={filter} onChange={setFilter} />
+          )}
+
+          {run.metrics && trades && (
+            <StatsStrip run={run} trades={filtered} capital={capital}
+              filtered={filtered.length !== trades.length} />
           )}
 
           {!trades && !tradesError && <div className="card card-b"><div className="skel" style={{ width: '50%' }} /></div>}
@@ -218,8 +221,38 @@ export function BacktestRunPage() {
 }
 
 /** The run's headline numbers, from the engine. Signals explains the gap to trades. */
-function StatsStrip({ run }: { run: Run }) {
-  const m = run.metrics!;
+/**
+ * The headline numbers for whatever is on screen.
+ *
+ * These used to be the engine's stored figures, which ignored the filter — so
+ * the strip said 954 trades while the bar directly beneath it said 559. They
+ * are recomputed from the filtered set instead, and say when that is a subset.
+ *
+ * Signals and skips stay as the engine reported them: they are facts about the
+ * scan, not about a selection of its trades, and filtering cannot change how
+ * many setups were found.
+ */
+function StatsStrip({ run, trades, capital, filtered }: {
+  run: Run;
+  trades: Trade[];
+  capital: number;
+  /** Whether `trades` is a subset, so the strip can say so. */
+  filtered: boolean;
+}) {
+  const s = summarize(trades, capital);
+  const m = {
+    netProfit: s.net,
+    finalEquity: capital + s.net,
+    totalTrades: s.n,
+    wins: s.wins,
+    losses: s.losses,
+    winRate: s.winRate * 100,
+    profitFactor: s.profitFactor,
+    expectancyR: s.expR,
+    maxDrawdownPct: s.maxDrawdown * 100,
+    maxDrawdown: s.maxDrawdown * capital,
+    ambiguousExits: trades.filter((t) => t.ambiguousExit).length,
+  };
   const sk = run.skipped;
   const skipped = sk
     ? sk.maxOpen + sk.stopGapped + (sk.targetPassed ?? 0) + sk.stopInsideCosts + sk.belowMinVolume + sk.noEntryBar
@@ -243,10 +276,18 @@ function StatsStrip({ run }: { run: Run }) {
     { l: 'Signals', v: String(run.signalsGenerated), s: skipped ? `${skipped} skipped${skipNote ? ` — ${skipNote}` : ''}` : 'all became trades' },
   ];
   return (
-    <div className="strip">
-      {cells.map((c) => (
-        <div key={c.l}><div className="l">{c.l}</div><div className={`v ${c.c ?? ''}`}>{c.v}</div><div className="s">{c.s}</div></div>
-      ))}
-    </div>
+    <>
+      {filtered && (
+        <p className="hint" style={{ margin: '0 0 6px' }}>
+          These are the filtered trades. Signals and skips are the whole scan — a filter
+          cannot change how many setups were found.
+        </p>
+      )}
+      <div className="strip">
+        {cells.map((c) => (
+          <div key={c.l}><div className="l">{c.l}</div><div className={`v ${c.c ?? ''}`}>{c.v}</div><div className="s">{c.s}</div></div>
+        ))}
+      </div>
+    </>
   );
 }

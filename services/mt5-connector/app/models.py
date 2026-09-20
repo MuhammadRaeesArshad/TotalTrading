@@ -89,6 +89,13 @@ class SymbolInfo(BaseModel):
     volume_step: float = 0.01
     selected: bool = False
     trade_allowed: bool = True
+    # Overnight financing, in points per lot per night, as the terminal states
+    # it. Negative is a charge. Positive on one side of a carry pair, which is
+    # why the backtester cannot guess these and has to be told.
+    swap_long: float = 0.0
+    swap_short: float = 0.0
+    # Weekday charged triple, 0 = Sunday. Brokers vary; MT5 reports its own.
+    swap_triple_weekday: int = 3
 
 
 class Candle(BaseModel):

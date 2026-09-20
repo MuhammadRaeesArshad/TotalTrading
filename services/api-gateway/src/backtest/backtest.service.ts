@@ -18,6 +18,7 @@ import { StartBacktestDto, StartSweepDto } from './dto';
 import { distinctCount, expandSweep, ParamSpec } from './sweep';
 import { describeParams, Dimension, ExploreRow, pipelineFor, toRows, totalsOf } from './explore';
 import { Sweep, SweepCellDoc, SweepDocument } from '../schemas/sweep.schema';
+import { Instrument, InstrumentDocument } from '../schemas/instrument.schema';
 
 const POLL_MS = 1_000;
 /**
@@ -57,6 +58,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(Backtest.name) private readonly backtests: Model<BacktestDocument>,
     @InjectModel(Trade.name) private readonly trades: Model<TradeDocument>,
     @InjectModel(Sweep.name) private readonly sweeps: Model<SweepDocument>,
+    @InjectModel(Instrument.name) private readonly instruments: Model<InstrumentDocument>,
     private readonly engine: BacktestClient,
   ) {}
 
@@ -165,6 +167,7 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
         higher_timeframes: higher,
         from_ts: dto.fromTs,
         to_ts: dto.toTs,
+        symbol_sim: await this.brokerFiguresFor(symbols),
         sim: {
           initial_balance: sim.initialBalance,
           risk_percent: sim.riskPercent,
@@ -194,6 +197,38 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** `archived` picks which shelf: the working list, or the one put aside. */
+  /**
+   * What the broker says about each symbol, for the engine to use instead of
+   * its own guesses.
+   *
+   * Swap arrives only this way — there is no deriving a carry rate from a
+   * symbol's name. A symbol with nothing stored is left to the engine's
+   * defaults, which is what happened before any of this existed.
+   */
+  private async brokerFiguresFor(symbols: string[]) {
+    const rows = await this.instruments
+      .find({ symbol: { $in: symbols } })
+      .select({ symbol: 1, pointSize: 1, volumeMin: 1, volumeMax: 1, volumeStep: 1,
+        swapLong: 1, swapShort: 1, swapTripleWeekday: 1 })
+      .lean();
+
+    const out: Record<string, Record<string, number>> = {};
+    for (const r of rows) {
+      const figures: Record<string, number> = {};
+      if (r.pointSize != null) figures.point_size = r.pointSize;
+      if (r.volumeMin != null) figures.volume_min = r.volumeMin;
+      if (r.volumeMax != null) figures.volume_max = r.volumeMax;
+      if (r.volumeStep != null) figures.volume_step = r.volumeStep;
+      if (r.swapLong != null) figures.swap_long_points = r.swapLong;
+      if (r.swapShort != null) figures.swap_short_points = r.swapShort;
+      if (r.swapTripleWeekday != null) figures.swap_triple_weekday = r.swapTripleWeekday;
+      // Only symbols we actually know something about; an empty object would
+      // just override the engine's defaults with nothing.
+      if (Object.keys(figures).length) out[r.symbol] = figures;
+    }
+    return out;
+  }
+
   /**
    * The cache key for a request, or null when it cannot be computed — the
    * engine being unreachable, or a detector it does not know. A missing key

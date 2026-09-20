@@ -8,7 +8,7 @@ import type { AuthedUser } from '../auth/jwt.strategy';
 import { AccountsService } from '../accounts/accounts.service';
 import { BacktestClient } from './backtest.client';
 import { BacktestService } from './backtest.service';
-import { ArchiveRunDto, ImportBarsDto, StartBacktestDto, StartSweepDto } from './dto';
+import { ArchiveRunDto, ExploreDto, ImportBarsDto, StartBacktestDto, StartSweepDto } from './dto';
 
 /** A year of M5 is ~75k bars per pair; this keeps one request bounded. */
 const MAX_SERIES_PER_IMPORT = 200;
@@ -84,6 +84,16 @@ export class BacktestController {
   @Patch('sweeps/:id/cancel')
   cancelSweep(@CurrentUser() user: AuthedUser, @Param('id') id: string) {
     return this.runs.cancelSweep(user.id, id);
+  }
+
+  /**
+   * Trades sliced across many runs: by setting, pair, session, year, month or
+   * direction, with a floor on how many trades a row needs to count.
+   */
+  @Post('explore')
+  @HttpCode(200)
+  explore(@CurrentUser() user: AuthedUser, @Body() dto: ExploreDto) {
+    return this.runs.explore(user.id, dto);
   }
 
   /** Per-pair totals, so the list can show a run's spread without opening it. */

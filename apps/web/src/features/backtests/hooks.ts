@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../lib/api';
 import { backtestApi } from './api';
-import type { ImportJob, Run, Trade } from './types';
+import type { ImportJob, Run, Sweep, Trade } from './types';
 
 const isLive = (r: Run | null) => r?.status === 'queued' || r?.status === 'running';
 
@@ -76,6 +76,22 @@ export function useRuns(archived = false) {
   }, [load]);
 
   return { runs, error, reload: load };
+}
+
+/**
+ * The sweeps that own runs in the list, newest first. Refetched whenever the
+ * list changes so a sweep that is still filling in keeps its group current.
+ * Failing quietly just leaves every run as a plain row.
+ */
+export function useSweeps(runs: Run[] | null, enabled: boolean) {
+  const [sweeps, setSweeps] = useState<Sweep[]>([]);
+  useEffect(() => {
+    if (!enabled || !runs) { setSweeps([]); return; }
+    let cancelled = false;
+    backtestApi.sweeps().then((s) => !cancelled && setSweeps(s)).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [runs, enabled]);
+  return sweeps;
 }
 
 /**

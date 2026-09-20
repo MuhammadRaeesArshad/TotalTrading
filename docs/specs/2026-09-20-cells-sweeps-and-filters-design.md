@@ -156,4 +156,7 @@ all of them. Selecting cells composes them into one combined result.
 - [x] 3 · sweep launch — `POST /backtest/sweeps`, a queue that runs one cell
       at a time, and `/sweeps/:id` showing every axis
 - [ ] 3b · a chart per axis instead of a table
-- [ ] 4 · batch page
+- [x] 4 · the Explore page — grouping across runs, which is what the batch
+      page was for. Selecting cells to combine is folded into it: a group *is*
+      a combination.
+- [ ] a chart on Explore, not only a table

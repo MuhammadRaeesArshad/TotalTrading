@@ -22,6 +22,10 @@ export const IconJobs = () => (
 export const IconBacktests = () => (
   <svg {...s}><path d="M2.5 12.5l4-6 3.5 3 5.5-7" strokeLinecap="round" strokeLinejoin="round" /><path d="M2.5 15.5h13" strokeLinecap="round" /></svg>
 );
+/** A grid being sliced: this page groups trades rather than listing them. */
+export const IconExplore = () => (
+  <svg {...s}><path d="M2.5 2.5h13v13h-13z" /><path d="M2.5 7h13M2.5 11.5h13M7 2.5v13" strokeLinecap="round" /></svg>
+);
 export const IconAnalysis = () => (
   <svg {...s}><path d="M4 2.5h7l3 3v10a1 1 0 01-1 1H4a1 1 0 01-1-1v-12a1 1 0 011-1z" /><path d="M6 9h6M6 12h4" strokeLinecap="round" /></svg>
 );

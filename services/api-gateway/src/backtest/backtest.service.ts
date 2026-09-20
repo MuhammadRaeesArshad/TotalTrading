@@ -16,6 +16,7 @@ import { mapEquity, mapMetrics, mapSkipped, mapTrade, tradeWindow } from './back
 import { fingerprint, withSimDefaults } from './backtest.fingerprint';
 import { StartBacktestDto, StartSweepDto } from './dto';
 import { distinctCount, expandSweep, ParamSpec } from './sweep';
+import { Dimension, ExploreRow, pipelineFor, toRows, totalsOf } from './explore';
 import { Sweep, SweepCellDoc, SweepDocument } from '../schemas/sweep.schema';
 
 const POLL_MS = 1_000;
@@ -416,6 +417,80 @@ export class BacktestService implements OnModuleInit, OnModuleDestroy {
       sumR: r.sumR,
       net: r.net,
     }));
+  }
+
+  /**
+   * Slices trades across many runs at once.
+   *
+   * `setting` grouping comes back keyed by run id, which means nothing on its
+   * own — the sweep knows which setting each run was moving, so the label is
+   * put on here rather than asking the browser to join it.
+   */
+  async explore(userId: string, body: {
+    runIds?: string[];
+    sweepId?: string;
+    by: Dimension[];
+    minTrades?: number;
+    pairs?: string[];
+    sessions?: string[];
+    side?: 'long' | 'short';
+    result?: 'win' | 'loss';
+    from?: string;
+    to?: string;
+  }) {
+    const uid = new Types.ObjectId(userId);
+    let runIds = body.runIds ?? [];
+    let labels = new Map<string, string>();
+
+    if (body.sweepId) {
+      const sweep = await this.sweeps
+        .findOne({ _id: new Types.ObjectId(body.sweepId), userId })
+        .lean();
+      if (!sweep) throw new NotFoundException('No sweep with that id.');
+      runIds = sweep.cells.filter((c) => c.runId).map((c) => String(c.runId));
+      labels = new Map(
+        sweep.cells
+          .filter((c) => c.runId)
+          .map((c) => [String(c.runId), `${c.axis} = ${String(c.value)}`]),
+      );
+    }
+
+    // Only the caller's own runs, whatever they asked for.
+    const owned = await this.backtests
+      .find({ _id: { $in: runIds.map((id) => new Types.ObjectId(id)) }, userId: uid })
+      .select({ _id: 1, detector: 1, detectorVersion: 1 })
+      .lean();
+    const allowed = owned.map((r) => String(r._id));
+    if (!allowed.length) {
+      return { rows: [] as ExploreRow[], totals: totalsOf([]), runs: 0, by: body.by };
+    }
+
+    const query = {
+      runIds: allowed,
+      by: body.by,
+      minTrades: body.minTrades ?? 1,
+      pairs: body.pairs,
+      sessions: body.sessions,
+      side: body.side,
+      result: body.result,
+      from: body.from,
+      to: body.to,
+    };
+    const raw = await this.trades.aggregate(pipelineFor(query) as never[]);
+    const rows = toRows(raw as never[], body.by);
+
+    // A run id is not a finding; say which setting it was.
+    const settingAt = body.by.indexOf('setting');
+    if (settingAt >= 0) {
+      for (const row of rows) {
+        const id = row.keys[settingAt];
+        row.keys[settingAt] = labels.get(id)
+          ?? owned.find((r) => String(r._id) === id)?.detector
+          ?? id;
+      }
+    }
+
+    return { rows, totals: totalsOf(rows), runs: allowed.length, by: body.by };
   }
 
   /** Bars around one trade, from the engine's cache, for its chart. */

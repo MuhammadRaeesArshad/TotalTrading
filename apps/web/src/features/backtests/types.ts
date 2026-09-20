@@ -239,3 +239,38 @@ export interface PairRow {
   sumR: number;
   net: number;
 }
+
+export type Dimension = 'pair' | 'session' | 'year' | 'month' | 'direction' | 'setting';
+
+/** One slice of trades across however many runs were in scope. */
+export interface ExploreRow {
+  keys: string[];
+  n: number;
+  wins: number;
+  winRate: number;
+  sumR: number;
+  avgR: number;
+  net: number;
+  bestR: number;
+  worstR: number;
+}
+
+export interface ExploreResult {
+  rows: ExploreRow[];
+  totals: { rows: number; n: number; wins: number; winRate: number; sumR: number; avgR: number; net: number };
+  runs: number;
+  by: Dimension[];
+}
+
+export interface ExploreQuery {
+  runIds?: string[];
+  sweepId?: string;
+  by: Dimension[];
+  minTrades?: number;
+  pairs?: string[];
+  sessions?: string[];
+  side?: 'long' | 'short';
+  result?: 'win' | 'loss';
+  from?: string;
+  to?: string;
+}

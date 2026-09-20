@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { ApiError } from '../lib/api';
 import { backtestApi } from '../features/backtests/api';
-import { useLatestImport, useRuns } from '../features/backtests/hooks';
+import { useLatestImport, useRuns, useSweeps } from '../features/backtests/hooks';
 import { ImportStatus } from '../features/backtests/components/ImportStatus';
 import { ImportModal } from '../features/backtests/components/ImportModal';
 import { NewRunModal } from '../features/backtests/components/NewRunModal';
@@ -13,10 +13,22 @@ import { PairBreakdown } from '../features/backtests/components/PairBreakdown';
 import { ArchiveIcon, Chevron, RestoreIcon, TrashIcon } from '../features/backtests/components/icons';
 import { StatusTag } from '../features/backtests/components/StatusTag';
 import { fmtDate, fmtMoney, fmtR, moneyClass } from '../features/backtests/fmt';
+import { groupBySweep } from '../features/backtests/group';
+import { SweepRow } from '../features/backtests/components/SweepRow';
 import { nextSort, sortRuns } from '../features/backtests/sortRuns';
 import type { Sort, SortKey } from '../features/backtests/sortRuns';
 
 type Shelf = 'current' | 'archived';
+
+/** Add the id to a set held in state, or take it out if it is already there. */
+function toggle(set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
+  set((cur) => {
+    const next = new Set(cur);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+}
 
 export function BacktestsPage() {
   const [shelf, setShelf] = useState<Shelf>('current');
@@ -37,6 +49,9 @@ export function BacktestsPage() {
   const [sort, setSort] = useState<Sort | null>(null);
   /// Rows opened to show how the result splits across pairs.
   const [opened, setOpened] = useState<Set<string>>(new Set());
+  /// Sweeps whose runs are showing. Folded until asked, so a page of thirty
+  /// runs from one sweep is one line.
+  const [openSweeps, setOpenSweeps] = useState<Set<string>>(new Set());
   /// The row a range selection extends from — the last one clicked plainly.
   const anchor = useRef<string | null>(null);
   /// What the delete dialog is about to remove: one run, or the selection.
@@ -50,7 +65,13 @@ export function BacktestsPage() {
     anchor.current = null;
   }, [shelf]);
 
+  const sweeps = useSweeps(runs, shelf === 'current');
   const shown = sortRuns(runs ?? [], sort);
+  const rows = groupBySweep(shown, sweeps);
+  // What is actually on screen, top to bottom: a range selection must not
+  // sweep up runs hidden inside a folded sweep.
+  const visible = rows.flatMap((row) =>
+    row.kind === 'run' ? [row.run] : openSweeps.has(row.sweep._id) ? row.runs : []);
   const allPicked = shown.length > 0 && shown.every((r) => picked.has(r._id));
   const somePicked = picked.size > 0 && !allPicked;
   const chosen = shown.filter((r) => picked.has(r._id));
@@ -60,12 +81,12 @@ export function BacktestsPage() {
     setPicked((cur) => {
       const next = new Set(cur);
       if (range && anchor.current) {
-        const from = shown.findIndex((r) => r._id === anchor.current);
-        const to = shown.findIndex((r) => r._id === run._id);
+        const from = visible.findIndex((r) => r._id === anchor.current);
+        const to = visible.findIndex((r) => r._id === run._id);
         if (from >= 0 && to >= 0) {
           const [lo, hi] = from < to ? [from, to] : [to, from];
           // Shift extends the selection; it never clears what it passes over.
-          for (let i = lo; i <= hi; i++) next.add(shown[i]._id);
+          for (let i = lo; i <= hi; i++) next.add(visible[i]._id);
           return next;
         }
       }
@@ -218,21 +239,40 @@ export function BacktestsPage() {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r) => (
-                  <RunRow key={r._id} run={r} archived={shelf === 'archived'}
-                    picked={picked.has(r._id)}
-                    expanded={opened.has(r._id)}
-                    onExpand={() => setOpened((cur) => {
-                      const next = new Set(cur);
-                      if (next.has(r._id)) next.delete(r._id);
-                      else next.add(r._id);
-                      return next;
-                    })}
-                    onPick={(range) => pick(r, range)}
-                    onOpen={() => navigate(`/backtests/${r._id}`)}
-                    onArchive={() => archive(r, shelf === 'current')}
-                    onDelete={() => setDoomed([r])} />
-                ))}
+                {rows.map((row) => {
+                  const runRow = (r: Run, nested: boolean) => (
+                    <RunRow key={r._id} run={r} archived={shelf === 'archived'} nested={nested}
+                      picked={picked.has(r._id)}
+                      expanded={opened.has(r._id)}
+                      onExpand={() => toggle(setOpened, r._id)}
+                      onPick={(range) => pick(r, range)}
+                      onOpen={() => navigate(`/backtests/${r._id}`)}
+                      onArchive={() => archive(r, shelf === 'current')}
+                      onDelete={() => setDoomed([r])} />
+                  );
+                  if (row.kind === 'run') return runRow(row.run, false);
+                  const id = row.sweep._id;
+                  const n = row.runs.filter((r) => picked.has(r._id)).length;
+                  return (
+                    <Fragment key={`sweep-${id}`}>
+                      <SweepRow sweep={row.sweep} runs={row.runs}
+                        open={openSweeps.has(id)}
+                        picked={n === row.runs.length}
+                        some={n > 0 && n < row.runs.length}
+                        onToggle={() => toggle(setOpenSweeps, id)}
+                        onPick={() => setPicked((cur) => {
+                          const next = new Set(cur);
+                          for (const r of row.runs) {
+                            if (n === row.runs.length) next.delete(r._id);
+                            else next.add(r._id);
+                          }
+                          return next;
+                        })}
+                        onOpenSweep={() => navigate(`/sweeps/${id}`)} />
+                      {openSweeps.has(id) && row.runs.map((r) => runRow(r, true))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -300,10 +340,11 @@ function SortTh({ k, sort, onSort, right, children }: {
 }
 
 function RunRow({
-  run, archived, picked, expanded, onExpand, onPick, onOpen, onArchive, onDelete,
+  run, archived, nested, picked, expanded, onExpand, onPick, onOpen, onArchive, onDelete,
 }: {
   run: Run;
   archived: boolean;
+  nested: boolean;
   picked: boolean;
   expanded: boolean;
   onExpand: () => void;
@@ -319,7 +360,8 @@ function RunRow({
     <>
     <tr onClick={onOpen} style={{ cursor: 'pointer' }} tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onOpen()}
-      className={picked ? 'picked' : undefined} aria-selected={picked}>
+      className={[picked && 'picked', nested && 'nested'].filter(Boolean).join(' ') || undefined}
+      aria-selected={picked}>
       <td className="pick" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" checked={picked}
           aria-label={`Select ${run.detector}, ${fmtDate(run.fromDate)} to ${fmtDate(run.toDate)}`}

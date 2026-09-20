@@ -35,6 +35,10 @@ a stale handoff is worse than none.
   Ledger, Replay and Anatomy all recompute from what survives, including the
   starting capital — narrowing a per-pair run to three pairs measures against
   three balances, not twenty-nine.
+- **Explore.** One page over every run at once: group trades by setting,
+  pair, session, year, month or side, with a floor on how many trades a slice
+  needs before it counts. Answers "in which session, on which pair, over four
+  years, did this make money" without opening runs one at a time.
 - **Backtests end to end.** Run through the gateway, stored in Mongo with every
   trade, and shown at `/backtests/:id`: global stats, every trade with its chart
   and the detector's reasoning beside it, plus Verdict, Ledger, Replay and

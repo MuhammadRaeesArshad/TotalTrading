@@ -398,6 +398,14 @@ tr.picked .row-actions{opacity:1;}
   border:1px solid var(--line);background:var(--surface-2);border-radius:8px;
   padding:8px 12px;margin-bottom:12px;font-size:12.5px;}
 
+/* A sweep folded into one row. Its runs sit under it, set in from the left with
+   a rule down the side, so they read as belonging to it. */
+tr.sweeprow{cursor:pointer;}
+tr.sweeprow > td{background:var(--surface-2);}
+tr.sweeprow:hover > td{background:var(--surface-3);}
+tr.nested > td:first-child{box-shadow:inset 2px 0 0 var(--line-strong);}
+tr.nested > td:nth-child(2){padding-left:34px;}
+
 /* How a run splits across its pairs, opened inline in the list. A fixed grid
    so every row's numbers line up down the column, and one shared scale so the
    bar lengths compare within the run. */
@@ -452,3 +460,11 @@ tr.picked .row-actions{opacity:1;}
   border-radius:6px;background:var(--surface-2);}
 .perpair-row{display:grid;grid-template-columns:76px 1fr;gap:8px;align-items:center;}
 .perpair-row select{font-size:11.5px;padding:4px 6px;}
+
+/* A sortable column heading. Looks like the heading it replaces until you
+   want it, so the table does not read as a row of buttons. */
+.th-sort{background:none;border:none;padding:0;font:inherit;color:inherit;
+  cursor:pointer;letter-spacing:inherit;text-transform:inherit;}
+.th-sort:hover{color:var(--fg);}
+.th-sort[aria-pressed="true"]{color:var(--fg);font-weight:600;}
+.th-sort[aria-pressed="true"]::after{content:' ↓';font-size:9px;}

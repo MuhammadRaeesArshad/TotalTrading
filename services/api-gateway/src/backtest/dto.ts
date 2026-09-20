@@ -124,3 +124,29 @@ export class StartSweepDto extends StartBacktestDto {
   @IsOptional() @IsArray() @IsString({ each: true })
   only?: string[];
 }
+
+/** What to slice, and how finely. */
+export class ExploreDto {
+  @IsOptional() @IsArray() @IsString({ each: true })
+  runIds?: string[];
+
+  /** Every answered cell of this sweep, instead of naming runs. */
+  @IsOptional() @IsString()
+  sweepId?: string;
+
+  /** One or two dimensions; more rows than anyone reads beyond that. */
+  @IsArray() @ArrayNotEmpty() @ArrayMaxSize(3)
+  @IsIn(['pair', 'session', 'year', 'month', 'direction', 'setting'], { each: true })
+  by: ('pair' | 'session' | 'year' | 'month' | 'direction' | 'setting')[];
+
+  /** Rows with fewer trades than this are dropped, not greyed out. */
+  @IsOptional() @IsInt() @Min(1) @Max(100_000)
+  minTrades?: number;
+
+  @IsOptional() @IsArray() @IsString({ each: true }) pairs?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) sessions?: string[];
+  @IsOptional() @IsIn(['long', 'short']) side?: 'long' | 'short';
+  @IsOptional() @IsIn(['win', 'loss']) result?: 'win' | 'loss';
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+}
